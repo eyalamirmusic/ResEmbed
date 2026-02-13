@@ -1,0 +1,1 @@
+add_executable(ResourceGenerator ResourceGenerator.cpp)

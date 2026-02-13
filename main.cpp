@@ -2,7 +2,7 @@
 
 int main()
 {
-    auto d = Resources::get("Data");
+    auto d = Resources::get("data");
 
     return 0;
 }
