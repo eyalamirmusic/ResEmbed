@@ -1,7 +1,7 @@
-add_library(ResourceEmbedLib INTERFACE)
+add_library(ResourceEmbedLib STATIC)
 
-target_sources(ResourceEmbedLib INTERFACE
+target_sources(ResourceEmbedLib PRIVATE
         ResourceEmbedLib.cpp
         ResourceEmbedLib.h)
 
-target_include_directories(ResourceEmbedLib INTERFACE ${CMAKE_CURRENT_LIST_DIR})
+target_include_directories(ResourceEmbedLib PUBLIC ${CMAKE_CURRENT_LIST_DIR})
