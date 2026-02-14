@@ -1,3 +1,3 @@
 add_executable(ResourceEmbedderTest main.cpp)
 target_link_libraries(ResourceEmbedderTest PRIVATE ResourceEmbedLib)
-embed_resource_directory(ResourceEmbedderTest ${CMAKE_CURRENT_LIST_DIR}/Resources)
+embed_resource_directory(ResourceEmbedderTest Resources)

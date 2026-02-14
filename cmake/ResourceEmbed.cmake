@@ -5,6 +5,11 @@ function(embed_resources TARGET)
         set(ARG_CATEGORY "Resources")
     endif()
 
+    get_target_property(RESOURCE_INDEX ${TARGET} RESOURCE_EMBED_INDEX)
+    if(NOT RESOURCE_INDEX)
+        set(RESOURCE_INDEX 1)
+    endif()
+
     foreach(INPUT_FILE IN LISTS ARG_UNPARSED_ARGUMENTS)
         cmake_path(IS_ABSOLUTE INPUT_FILE IS_ABS)
         if(IS_ABS)
@@ -12,8 +17,9 @@ function(embed_resources TARGET)
         else()
             set(ABSOLUTE_INPUT "${CMAKE_CURRENT_SOURCE_DIR}/${INPUT_FILE}")
         endif()
-        get_filename_component(RESOURCE_NAME "${INPUT_FILE}" NAME_WE)
-        set(OUTPUT_CPP "${CMAKE_CURRENT_BINARY_DIR}/${RESOURCE_NAME}_resource.cpp")
+        get_filename_component(RESOURCE_NAME "${INPUT_FILE}" NAME)
+        set(OUTPUT_CPP "${CMAKE_CURRENT_BINARY_DIR}/BinaryResource${RESOURCE_INDEX}.cpp")
+        math(EXPR RESOURCE_INDEX "${RESOURCE_INDEX} + 1")
 
         add_custom_command(
             OUTPUT "${OUTPUT_CPP}"
@@ -24,6 +30,8 @@ function(embed_resources TARGET)
 
         target_sources(${TARGET} PRIVATE "${OUTPUT_CPP}")
     endforeach()
+
+    set_target_properties(${TARGET} PROPERTIES RESOURCE_EMBED_INDEX ${RESOURCE_INDEX})
 endfunction()
 
 function(embed_resource_directory TARGET DIRECTORY)
