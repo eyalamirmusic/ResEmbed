@@ -1,0 +1,3 @@
+add_executable(ResourceEmbedderTest main.cpp)
+target_link_libraries(ResourceEmbedderTest PRIVATE ResourceEmbedLib)
+embed_resources(ResourceEmbedderTest data.bin)

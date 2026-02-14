@@ -10,7 +10,7 @@ Map& getMap()
 
 DataView get(const std::string& name)
 {
-    return getMap()[name];
+    return {getMap()[name]};
 }
 
 Data::Data(const std::string& name, const RawData& rawData)
