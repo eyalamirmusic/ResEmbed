@@ -10,5 +10,6 @@ include(CMake/ResourceEmbed.cmake)
 option(RESOURCE_EMBEDDER_TESTS "Build ResourceEmbedder tests" OFF)
 
 if(PROJECT_IS_TOP_LEVEL OR RESOURCE_EMBEDDER_TESTS)
+    add_subdirectory(GeneratedCodeTest)
     add_subdirectory(Test)
 endif()
