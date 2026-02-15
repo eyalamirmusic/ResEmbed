@@ -1,9 +1,17 @@
 #include "ResourceData.h"
 #include <iostream>
 
+struct StaticLoader
+{
+    StaticLoader()
+    {
+        std::cout << Resources::get("data.txt").toString() << std::endl;
+    }
+};
+
+StaticLoader loader;
+
 int main()
 {
-    Resources::registerEntries(resource_entries, resource_entry_count);
-    std::cout << Resources::get("data.txt").toString() << std::endl;
     return 0;
 }

@@ -1,20 +1,9 @@
 #pragma once
 
-#include <stddef.h>
-
-typedef struct
-{
-    const char* name;
-    const char* category;
-    const unsigned char* data;
-    size_t size;
-} ResourceEntry;
-
-#ifdef __cplusplus
-
 #include <map>
 #include <span>
 #include <string>
+#include <vector>
 
 namespace Resources
 {
@@ -23,6 +12,23 @@ using ResourceMap = std::map<std::string, View>;
 using CategoryMap = std::map<std::string, ResourceMap>;
 
 inline constexpr auto DefaultCategory = "Resources";
+
+struct Entry
+{
+    Entry() = default;
+
+    Entry(const unsigned char* dataToUse,
+          unsigned long sizeToUse,
+          const char* nameToUse,
+          const char* categoryToUse = "Resources")
+        : data(dataToUse, sizeToUse), name(nameToUse), category(categoryToUse) {}
+
+    View data;
+    std::string name;
+    std::string category;
+};
+
+using Entries = std::vector<Entry>;
 
 struct DataView
 {
@@ -53,7 +59,13 @@ DataView get(const std::string& name, const std::string& category = DefaultCateg
 
 ResourceMap& getCategory(const std::string& category);
 
-void registerEntries(const ResourceEntry* entries, size_t count);
-} // namespace Resources
+void registerEntries(const Entries& entries);
 
-#endif
+struct Initializer
+{
+    Initializer(const Entries& entries)
+    {
+        registerEntries(entries);
+    }
+};
+} // namespace Resources

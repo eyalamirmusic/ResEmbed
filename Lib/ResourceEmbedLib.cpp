@@ -18,12 +18,9 @@ ResourceMap& getCategory(const std::string& category)
     return getMap()[category];
 }
 
-void registerEntries(const ResourceEntry* entries, size_t count)
+void registerEntries(const Entries& entries)
 {
-    for (size_t i = 0; i < count; ++i)
-    {
-        auto& entry = entries[i];
-        getCategory(entry.category)[entry.name] = View(entry.data, entry.size);
-    }
+    for (auto& entry: entries)
+        getCategory(entry.category)[entry.name] = entry.data;
 }
 } // namespace Resources
