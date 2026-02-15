@@ -24,8 +24,7 @@ struct ProgramArgs
 {
     std::string input;
     std::string output;
-    std::string resource;
-    std::string category = "Resources";
+    std::string variableName;
 };
 
 void run(const ProgramArgs& args)
@@ -37,9 +36,7 @@ void run(const ProgramArgs& args)
     if (!out)
         throw std::runtime_error("Error: cannot open output file: " + args.output);
 
-    out << "#include \"ResourceEmbedLib.h\"\n\n";
-    out << "static const auto resource = Resources::Data(\"" << args.resource
-        << "\", {\n";
+    out << "const unsigned char " << args.variableName << "_data[] = {\n";
 
     for (size_t i = 0; i < data.size(); ++i)
     {
@@ -57,7 +54,9 @@ void run(const ProgramArgs& args)
             out << " ";
     }
 
-    out << "}, \"" << args.category << "\");\n";
+    out << "};\n\n";
+    out << "const unsigned long " << args.variableName
+        << "_size = sizeof(" << args.variableName << "_data);\n";
 
     if (!out)
     {
@@ -68,20 +67,17 @@ void run(const ProgramArgs& args)
 
 ProgramArgs getArgs(int argc, char* argv[])
 {
-    if (argc < 4 || argc > 5)
+    if (argc != 4)
     {
         throw std::runtime_error(
-            "Usage: ResourceGenerator <input_file> <output_cpp> <resource_name> [category]");
+            "Usage: ResourceGenerator <input_file> <output_c> <variable_name>");
     }
 
     auto args = ProgramArgs();
 
     args.input = argv[1];
     args.output = argv[2];
-    args.resource = argv[3];
-
-    if (argc == 5)
-        args.category = argv[4];
+    args.variableName = argv[3];
 
     return args;
 }
