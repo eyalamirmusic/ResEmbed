@@ -57,15 +57,10 @@ struct DataView
 
 DataView get(const std::string& name, const std::string& category = DefaultCategory);
 
-ResourceMap& getCategory(const std::string& category);
-
-void registerEntries(const Entries& entries);
+ResourceMap getCategory(const std::string& category);
 
 struct Initializer
 {
-    Initializer(const Entries& entries)
-    {
-        registerEntries(entries);
-    }
+    Initializer(const Entries& entries);
 };
 } // namespace Resources
