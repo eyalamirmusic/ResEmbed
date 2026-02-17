@@ -11,6 +11,7 @@ int main()
 {
     printResource("data.bin");
     printResource("data2.txt");
+    printResource("Data With Space.txt");
 
     return 0;
 }
