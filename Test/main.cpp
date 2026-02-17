@@ -3,7 +3,7 @@
 
 void printResource(const std::string& name)
 {
-    auto d = Resources::get(name);
+    auto d = Resources::get(name, "Custom");
     std::cout << d.toString() << std::endl;
 }
 

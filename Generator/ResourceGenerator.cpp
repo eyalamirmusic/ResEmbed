@@ -167,7 +167,7 @@ EmbedArgs getEmbedArgs(int argc, char* argv[])
 
     for (int i = 2; i < argc; i += 3)
     {
-        args.resources.push_back({argv[i], argv[i + 1], argv[i + 2]});
+        args.resources.emplace_back(argv[i], argv[i + 1], argv[i + 2]);
     }
 
     return args;

@@ -1,3 +1,3 @@
 add_executable(ResourceEmbedderTest main.cpp)
 target_link_libraries(ResourceEmbedderTest PRIVATE ResourceEmbedLib)
-embed_resource_directory(ResourceEmbedderTest DIRECTORY Resources HEADER BinaryData.h)
+embed_resource_directory(ResourceEmbedderTest DIRECTORY Resources HEADER BinaryData.h CATEGORY "Custom")
