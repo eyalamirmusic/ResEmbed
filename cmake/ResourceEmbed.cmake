@@ -51,6 +51,7 @@ function(embed_resources TARGET)
         )
         target_sources(${TARGET} PRIVATE "${HEADER_FILE}")
         target_include_directories(${TARGET} PUBLIC "${GENERATED_DIR}")
+        target_link_libraries(${TARGET} PUBLIC ResourceEmbedLib)
         set_target_properties(${TARGET} PROPERTIES RESOURCE_EMBED_INIT_ADDED TRUE)
     endif()
 
