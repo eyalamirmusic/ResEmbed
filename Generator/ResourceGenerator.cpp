@@ -27,11 +27,17 @@ struct ResourceTriplet
     std::string resourceName;
 };
 
-struct ProgramArgs
+struct EmbedArgs
 {
     std::string headerOutput;
     std::string category;
     std::vector<ResourceTriplet> resources;
+};
+
+struct InitArgs
+{
+    std::string initCppOutput;
+    std::string headerName;
 };
 
 void writeDataFile(const std::string& input,
@@ -74,7 +80,7 @@ void writeDataFile(const std::string& input,
     }
 }
 
-void writeHeader(const ProgramArgs& args)
+void writeHeader(const EmbedArgs& args)
 {
     auto out = std::ofstream(args.headerOutput);
 
@@ -120,21 +126,38 @@ void writeHeader(const ProgramArgs& args)
     }
 }
 
-ProgramArgs getArgs(int argc, char* argv[])
+void writeInitCpp(const InitArgs& args)
 {
-    if (argc < 3 || (argc - 3) % 3 != 0)
+    auto out = std::ofstream(args.initCppOutput);
+
+    if (!out)
+        throw std::runtime_error(
+            "Error: cannot open init cpp file: " + args.initCppOutput);
+
+    out << "#include \"" << args.headerName << "\"\n";
+
+    if (!out)
     {
         throw std::runtime_error(
-            "Usage: ResourceGenerator <header_output> <category> "
+            "Error: failed to write init cpp file: " + args.initCppOutput);
+    }
+}
+
+EmbedArgs getEmbedArgs(int argc, char* argv[])
+{
+    if (argc < 2 || (argc - 2) % 3 != 0)
+    {
+        throw std::runtime_error(
+            "Usage: ResourceGenerator embed <header_output> <category> "
             "[<input> <output.c> <resource_name>]...");
     }
 
-    auto args = ProgramArgs();
+    auto args = EmbedArgs();
 
-    args.headerOutput = argv[1];
-    args.category = argv[2];
+    args.headerOutput = argv[0];
+    args.category = argv[1];
 
-    for (int i = 3; i < argc; i += 3)
+    for (int i = 2; i < argc; i += 3)
     {
         args.resources.push_back({argv[i], argv[i + 1], argv[i + 2]});
     }
@@ -142,21 +165,72 @@ ProgramArgs getArgs(int argc, char* argv[])
     return args;
 }
 
+InitArgs getInitArgs(int argc, char* argv[])
+{
+    if (argc != 2)
+    {
+        throw std::runtime_error(
+            "Usage: ResourceGenerator init <output_cpp> <header_name>");
+    }
+
+    return {argv[0], argv[1]};
+}
+
+void writeResources(const EmbedArgs& args)
+{
+    for (size_t i = 0; i < args.resources.size(); ++i)
+    {
+        auto varPrefix = "resource_" + std::to_string(i);
+        writeDataFile(args.resources[i].input,
+                      args.resources[i].outputC,
+                      varPrefix);
+    }
+}
+
+void runEmbed(const EmbedArgs& args)
+{
+    writeResources(args);
+    writeHeader(args);
+}
+
+std::string parseCommand(int argc, char* argv[])
+{
+    if (argc < 2)
+    {
+        throw std::runtime_error(
+            "Usage: ResourceGenerator <embed|init> ...");
+    }
+
+    return {argv[1]};
+}
+
+void run(int argc, char* argv[])
+{
+    auto command = parseCommand(argc, argv);
+
+    if (command == "embed")
+    {
+        auto args = getEmbedArgs(argc - 2, argv + 2);
+        runEmbed(args);
+    }
+    else if (command == "init")
+    {
+        auto args = getInitArgs(argc - 2, argv + 2);
+        writeInitCpp(args);
+    }
+    else
+    {
+        throw std::runtime_error(
+            "Unknown command: " + command +
+            "\nUsage: ResourceGenerator <embed|init> ...");
+    }
+}
+
 int main(int argc, char* argv[])
 {
     try
     {
-        auto args = getArgs(argc, argv);
-
-        for (size_t i = 0; i < args.resources.size(); ++i)
-        {
-            auto varPrefix = "resource_" + std::to_string(i);
-            writeDataFile(args.resources[i].input,
-                          args.resources[i].outputC,
-                          varPrefix);
-        }
-
-        writeHeader(args);
+        run(argc, argv);
     }
     catch (std::exception& e)
     {

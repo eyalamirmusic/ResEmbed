@@ -15,6 +15,7 @@ function(embed_resources TARGET)
     endif()
 
     set(HEADER_FILE "${CMAKE_CURRENT_BINARY_DIR}/${ARG_HEADER}")
+    set(INIT_CPP "${CMAKE_CURRENT_BINARY_DIR}/ResourceInit.cpp")
     set(GENERATED_C_FILES "")
     set(GENERATOR_ARGS "${HEADER_FILE}" "${ARG_CATEGORY}")
     set(INPUT_DEPS "")
@@ -41,16 +42,19 @@ function(embed_resources TARGET)
 
     add_custom_command(
         OUTPUT ${GENERATED_C_FILES} "${HEADER_FILE}"
-        COMMAND ResourceGenerator ${GENERATOR_ARGS}
+        COMMAND ResourceGenerator embed ${GENERATOR_ARGS}
         DEPENDS ${INPUT_DEPS} ResourceGenerator
         COMMENT "Embedding ${ARG_CATEGORY} resources"
     )
 
-    set(INIT_CPP "${CMAKE_CURRENT_BINARY_DIR}/ResourceInit.cpp")
-    file(WRITE "${INIT_CPP}" "#include \"${ARG_HEADER}\"\n")
-
     get_target_property(INIT_ADDED ${TARGET} RESOURCE_EMBED_INIT_ADDED)
     if(NOT INIT_ADDED)
+        add_custom_command(
+            OUTPUT "${INIT_CPP}"
+            COMMAND ResourceGenerator init "${INIT_CPP}" "${ARG_HEADER}"
+            DEPENDS ResourceGenerator
+            COMMENT "Generating ResourceInit.cpp"
+        )
         target_sources(${TARGET} PRIVATE "${INIT_CPP}")
         target_include_directories(${TARGET} PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
         set_target_properties(${TARGET} PROPERTIES RESOURCE_EMBED_INIT_ADDED TRUE)
