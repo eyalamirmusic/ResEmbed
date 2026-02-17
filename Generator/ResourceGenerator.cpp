@@ -29,15 +29,14 @@ struct ResourceTriplet
 
 struct EmbedArgs
 {
-    std::string headerOutput;
+    std::string cppOutput;
     std::string category;
     std::vector<ResourceTriplet> resources;
 };
 
 struct InitArgs
 {
-    std::string initCppOutput;
-    std::string headerName;
+    std::string headerOutput;
 };
 
 void writeDataFile(const std::string& input,
@@ -80,15 +79,14 @@ void writeDataFile(const std::string& input,
     }
 }
 
-void writeHeader(const EmbedArgs& args)
+void writeEntriesCpp(const EmbedArgs& args)
 {
-    auto out = std::ofstream(args.headerOutput);
+    auto out = std::ofstream(args.cppOutput);
 
     if (!out)
         throw std::runtime_error(
-            "Error: cannot open header file: " + args.headerOutput);
+            "Error: cannot open output file: " + args.cppOutput);
 
-    out << "#pragma once\n\n";
     out << "#include \"ResourceEmbedLib.h\"\n\n";
 
     for (size_t i = 0; i < args.resources.size(); ++i)
@@ -100,12 +98,14 @@ void writeHeader(const EmbedArgs& args)
 
     out << "\nnamespace Resources\n";
     out << "{\n";
-    out << "static const Entries resource_entries = {\n";
+    out << "const Entries& getResourceEntries()\n";
+    out << "{\n";
+    out << "    static const Entries entries = {\n";
 
     for (size_t i = 0; i < args.resources.size(); ++i)
     {
         auto varPrefix = "resource_" + std::to_string(i);
-        out << "    {" << varPrefix << "_data, " << varPrefix << "_size, \""
+        out << "        {" << varPrefix << "_data, " << varPrefix << "_size, \""
             << args.resources[i].resourceName << "\", \""
             << args.category << "\"}";
 
@@ -115,8 +115,33 @@ void writeHeader(const EmbedArgs& args)
         out << "\n";
     }
 
-    out << "};\n\n";
-    out << "static const Initializer resourceInitializer {resource_entries};\n";
+    out << "    };\n\n";
+    out << "    return entries;\n";
+    out << "}\n";
+    out << "}\n";
+
+    if (!out)
+    {
+        throw std::runtime_error(
+            "Error: failed to write output file: " + args.cppOutput);
+    }
+}
+
+void writeInitHeader(const InitArgs& args)
+{
+    auto out = std::ofstream(args.headerOutput);
+
+    if (!out)
+        throw std::runtime_error(
+            "Error: cannot open header file: " + args.headerOutput);
+
+    out << "#pragma once\n\n";
+    out << "#include \"ResourceEmbedLib.h\"\n\n";
+    out << "namespace Resources\n";
+    out << "{\n";
+    out << "const Entries& getResourceEntries();\n";
+    out << "static const Initializer resourceInitializer "
+        << "{getResourceEntries()};\n";
     out << "}\n";
 
     if (!out)
@@ -126,35 +151,18 @@ void writeHeader(const EmbedArgs& args)
     }
 }
 
-void writeInitCpp(const InitArgs& args)
-{
-    auto out = std::ofstream(args.initCppOutput);
-
-    if (!out)
-        throw std::runtime_error(
-            "Error: cannot open init cpp file: " + args.initCppOutput);
-
-    out << "#include \"" << args.headerName << "\"\n";
-
-    if (!out)
-    {
-        throw std::runtime_error(
-            "Error: failed to write init cpp file: " + args.initCppOutput);
-    }
-}
-
 EmbedArgs getEmbedArgs(int argc, char* argv[])
 {
     if (argc < 2 || (argc - 2) % 3 != 0)
     {
         throw std::runtime_error(
-            "Usage: ResourceGenerator embed <header_output> <category> "
+            "Usage: ResourceGenerator embed <cpp_output> <category> "
             "[<input> <output.c> <resource_name>]...");
     }
 
     auto args = EmbedArgs();
 
-    args.headerOutput = argv[0];
+    args.cppOutput = argv[0];
     args.category = argv[1];
 
     for (int i = 2; i < argc; i += 3)
@@ -167,13 +175,13 @@ EmbedArgs getEmbedArgs(int argc, char* argv[])
 
 InitArgs getInitArgs(int argc, char* argv[])
 {
-    if (argc != 2)
+    if (argc != 1)
     {
         throw std::runtime_error(
-            "Usage: ResourceGenerator init <output_cpp> <header_name>");
+            "Usage: ResourceGenerator init <header_output>");
     }
 
-    return {argv[0], argv[1]};
+    return {argv[0]};
 }
 
 void writeResources(const EmbedArgs& args)
@@ -190,7 +198,7 @@ void writeResources(const EmbedArgs& args)
 void runEmbed(const EmbedArgs& args)
 {
     writeResources(args);
-    writeHeader(args);
+    writeEntriesCpp(args);
 }
 
 std::string parseCommand(int argc, char* argv[])
@@ -216,7 +224,7 @@ void run(int argc, char* argv[])
     else if (command == "init")
     {
         auto args = getInitArgs(argc - 2, argv + 2);
-        writeInitCpp(args);
+        writeInitHeader(args);
     }
     else
     {
