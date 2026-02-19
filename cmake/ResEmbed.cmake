@@ -73,6 +73,6 @@ function(res_embed_add TARGET)
     )
 
     target_include_directories(${TARGET} PUBLIC "${GENERATED_DIR}")
-    target_link_libraries(${TARGET} PUBLIC ResourceEmbedLib)
+    target_link_libraries(${TARGET} PUBLIC ResEmbed)
     target_sources(${TARGET} PRIVATE ${DATA_FILES} ${REGISTRY_FILES})
 endfunction()

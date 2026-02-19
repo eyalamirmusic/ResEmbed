@@ -1,7 +1,7 @@
-add_library(ResourceEmbedLib INTERFACE)
+add_library(ResEmbed INTERFACE)
 
-target_sources(ResourceEmbedLib INTERFACE
+target_sources(ResEmbed INTERFACE
         ResEmbed/ResEmbed.cpp
         ResEmbed/ResEmbed.h)
 
-target_include_directories(ResourceEmbedLib INTERFACE ${CMAKE_CURRENT_LIST_DIR})
+target_include_directories(ResEmbed INTERFACE ${CMAKE_CURRENT_LIST_DIR})
