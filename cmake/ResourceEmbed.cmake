@@ -1,6 +1,4 @@
 function(embed_resources TARGET)
-    return()
-
     cmake_parse_arguments(PARSE_ARGV 1 ARG "" "CATEGORY;NAMESPACE" "FILES")
 
     if(NOT ARG_CATEGORY)
@@ -47,8 +45,6 @@ function(embed_resources TARGET)
     target_include_directories(${TARGET} PUBLIC "${GENERATED_DIR}")
     target_link_libraries(${TARGET} PUBLIC ResourceEmbedLib)
     target_sources(${TARGET} PRIVATE ${GENERATED_FILES})
-
-    message("Finished Embedding ${TARGET}")
 endfunction()
 
 function(embed_resource_directory TARGET)
