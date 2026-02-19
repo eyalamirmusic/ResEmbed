@@ -4,6 +4,9 @@ A CMake/C++20 library for embedding binary files directly into your executables 
 
 Resource files (images, text, shaders, etc.) are converted into C byte arrays during the build, then registered into a global, thread-safe registry accessible at runtime through a simple C++ API.
 
+ResEmbed is meant to be extremelly portable:
+Currently tested on MacOS/iOS/Linux GCC/Linux Clang/Windows MSVC and Windows Clang.
+
 ## Integration
 
 ```cmake
