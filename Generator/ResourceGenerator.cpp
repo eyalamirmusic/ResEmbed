@@ -16,7 +16,7 @@ Data readDataFrom(const std::string& path)
     if (!in)
         throw std::runtime_error("Error: cannot open input file: " + path);
 
-    auto data = Data(Iterator(in), Iterator<char>());
+    auto data = Data(Iterator<char>(in), Iterator<char>());
     in.close();
 
     return data;
