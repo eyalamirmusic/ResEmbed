@@ -4,7 +4,9 @@ project(ResEmbed)
 set(CMAKE_CXX_STANDARD 20)
 
 add_subdirectory(Lib)
+
 add_subdirectory(Generator)
+
 include(CMake/ResEmbed.cmake)
 
 option(RESOURCE_EMBEDDER_TESTS "Build ResourceEmbedder tests" OFF)
