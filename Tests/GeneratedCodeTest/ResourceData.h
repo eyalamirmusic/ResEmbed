@@ -1,5 +1,6 @@
 #pragma once
 
+#include <ResEmbed/Entries.h>
 #include <ResEmbed/ResEmbed.h>
 
 namespace Resources
