@@ -1,6 +1,6 @@
 add_library(TestResources STATIC)
-embed_resource_directory(TestResources DIRECTORY Resources NAMESPACE BinaryData CATEGORY "Custom")
+res_embed_add(TestResources DIRECTORY Resources NAMESPACE BinaryData CATEGORY "Custom")
 
 add_executable(ResourceEmbedderTest main.cpp)
-embed_resource_directory(ResourceEmbedderTest DIRECTORY MoreResources)
+res_embed_add(ResourceEmbedderTest DIRECTORY MoreResources)
 target_link_libraries(ResourceEmbedderTest PRIVATE TestResources)

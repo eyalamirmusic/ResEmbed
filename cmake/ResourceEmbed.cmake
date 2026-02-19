@@ -1,5 +1,5 @@
-function(embed_resources TARGET)
-    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "CATEGORY;NAMESPACE" "FILES")
+function(res_embed_add TARGET)
+    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "CATEGORY;DIRECTORY;NAMESPACE" "FILES")
 
     if(NOT ARG_CATEGORY)
         set(ARG_CATEGORY "Resources")
@@ -7,6 +7,18 @@ function(embed_resources TARGET)
 
     if(NOT ARG_NAMESPACE)
         set(ARG_NAMESPACE "Resources")
+    endif()
+
+    if(DEFINED ARG_DIRECTORY AND DEFINED ARG_FILES)
+        message(FATAL_ERROR "res_embed_add: DIRECTORY and FILES are mutually exclusive")
+    elseif(NOT DEFINED ARG_DIRECTORY AND NOT DEFINED ARG_FILES)
+        message(FATAL_ERROR "res_embed_add: either DIRECTORY or FILES must be specified")
+    endif()
+
+    if(DEFINED ARG_DIRECTORY)
+        file(GLOB_RECURSE ARG_FILES
+                CONFIGURE_DEPENDS
+                "${ARG_DIRECTORY}/*.*")
     endif()
 
     get_target_property(TARGET_BINARY_DIR ${TARGET} BINARY_DIR)
@@ -46,22 +58,4 @@ function(embed_resources TARGET)
     target_include_directories(${TARGET} PUBLIC "${GENERATED_DIR}")
     target_link_libraries(${TARGET} PUBLIC ResourceEmbedLib)
     target_sources(${TARGET} PRIVATE ${GENERATED_FILES})
-endfunction()
-
-function(embed_resource_directory TARGET)
-    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "CATEGORY;DIRECTORY;NAMESPACE" "")
-
-    file(GLOB_RECURSE FILES
-            CONFIGURE_DEPENDS
-            "${ARG_DIRECTORY}/*.*")
-
-    set(FORWARD_ARGS FILES ${FILES})
-    if(DEFINED ARG_CATEGORY)
-        list(APPEND FORWARD_ARGS CATEGORY "${ARG_CATEGORY}")
-    endif()
-    if(DEFINED ARG_NAMESPACE)
-        list(APPEND FORWARD_ARGS NAMESPACE "${ARG_NAMESPACE}")
-    endif()
-
-    embed_resources(${TARGET} ${FORWARD_ARGS})
 endfunction()
