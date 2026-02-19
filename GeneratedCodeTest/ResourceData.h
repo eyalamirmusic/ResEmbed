@@ -1,6 +1,6 @@
 #pragma once
 
-#include "ResourceEmbedLib.h"
+#include <ResEmbed/ResEmbed.h>
 
 namespace ResEmbed
 {

@@ -1,4 +1,4 @@
-#include "ResourceEmbedLib.h"
+#include <ResEmbed/ResEmbed.h>
 #include <mutex>
 
 namespace ResEmbed

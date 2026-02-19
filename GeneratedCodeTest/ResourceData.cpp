@@ -4,7 +4,7 @@ extern const unsigned char resource_0_data[];
 extern const unsigned long resource_0_size;
 }
 
-#include "ResourceEmbedLib.h"
+#include <ResEmbed/ResEmbed.h>
 
 namespace ResEmbed
 {
