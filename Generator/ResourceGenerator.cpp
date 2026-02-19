@@ -1,5 +1,7 @@
+#include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <vector>
 #include <string>
 
@@ -41,34 +43,35 @@ std::string getFilename(const std::string& path)
     return path;
 }
 
-std::vector<std::string> readFileList(const std::string& path)
+bool writeFileIfChanged(const std::string& path, const std::string& content)
 {
-    auto in = std::ifstream(path);
+    auto in = std::ifstream(path, std::ios::binary);
 
-    if (!in)
-        throw std::runtime_error("Error: cannot open file list: " + path);
-
-    auto result = std::vector<std::string>();
-    auto line = std::string();
-
-    while (std::getline(in, line))
+    if (in)
     {
-        if (!line.empty())
-            result.push_back(line);
+        auto existing = std::string(
+            std::istreambuf_iterator<char>(in),
+            std::istreambuf_iterator<char>());
+        in.close();
+
+        if (existing == content)
+            return false;
     }
 
-    return result;
+    auto out = std::ofstream(path, std::ios::binary);
+
+    if (!out)
+        throw std::runtime_error("Error: cannot open output file: " + path);
+
+    out << content;
+
+    if (!out)
+        throw std::runtime_error("Error: failed to write output file: " + path);
+
+    return true;
 }
 
-struct EmbedArgs
-{
-    std::string inputFile;
-    std::string outputC;
-    int index;
-    std::string namespaceName;
-};
-
-struct InitArgs
+struct GenerateArgs
 {
     std::string outputDir;
     std::string namespaceName;
@@ -76,16 +79,11 @@ struct InitArgs
     std::vector<std::string> inputFiles;
 };
 
-void writeDataFile(const std::string& input,
-                   const std::string& output,
-                   const std::string& varPrefix)
+std::string generateDataFile(const std::string& input,
+                             const std::string& varPrefix)
 {
     auto data = readDataFrom(input);
-
-    auto out = std::ofstream(output);
-
-    if (!out)
-        throw std::runtime_error("Error: cannot open output file: " + output);
+    auto out = std::ostringstream();
 
     out << "const unsigned char " << varPrefix << "_data[] = {\n";
 
@@ -109,21 +107,12 @@ void writeDataFile(const std::string& input,
     out << "const unsigned long " << varPrefix
         << "_size = sizeof(" << varPrefix << "_data);\n";
 
-    if (!out)
-    {
-        throw std::runtime_error(
-            "Error: failed to write output file: " + output);
-    }
+    return out.str();
 }
 
-void writeEntriesCpp(const InitArgs& args)
+std::string generateEntriesCpp(const GenerateArgs& args)
 {
-    auto cppOutput = args.outputDir + "/" + args.namespaceName + ".cpp";
-    auto out = std::ofstream(cppOutput);
-
-    if (!out)
-        throw std::runtime_error(
-            "Error: cannot open output file: " + cppOutput);
+    auto out = std::ostringstream();
 
     out << "#include \"ResourceEmbedLib.h\"\n\n";
 
@@ -161,21 +150,12 @@ void writeEntriesCpp(const InitArgs& args)
     out << "}\n";
     out << "}\n";
 
-    if (!out)
-    {
-        throw std::runtime_error(
-            "Error: failed to write output file: " + cppOutput);
-    }
+    return out.str();
 }
 
-void writeInitHeader(const InitArgs& args)
+std::string generateInitHeader(const GenerateArgs& args)
 {
-    auto headerOutput = args.outputDir + "/" + args.namespaceName + ".h";
-    auto out = std::ofstream(headerOutput);
-
-    if (!out)
-        throw std::runtime_error(
-            "Error: cannot open header file: " + headerOutput);
+    auto out = std::ostringstream();
 
     out << "#pragma once\n\n";
     out << "#include \"ResourceEmbedLib.h\"\n\n";
@@ -186,39 +166,26 @@ void writeInitHeader(const InitArgs& args)
         << "{getResourceEntries()};\n";
     out << "}\n";
 
-    if (!out)
-    {
-        throw std::runtime_error(
-            "Error: failed to write header file: " + headerOutput);
-    }
+    return out.str();
 }
 
-EmbedArgs getEmbedArgs(int argc, char* argv[])
-{
-    if (argc != 4)
-    {
-        throw std::runtime_error(
-            "Usage: ResourceGenerator embed <input_file> <output.c> <index> <namespace>");
-    }
-
-    return {argv[0], argv[1], std::stoi(argv[2]), argv[3]};
-}
-
-InitArgs getInitArgs(int argc, char* argv[])
+GenerateArgs getGenerateArgs(int argc, char* argv[])
 {
     if (argc < 4)
     {
         throw std::runtime_error(
-            "Usage: ResourceGenerator init <output_dir> <namespace> "
-            "<category> <file_list>");
+            "Usage: ResourceGenerator generate <output_dir> <namespace> "
+            "<category> file1 [file2 ...]");
     }
 
-    auto args = InitArgs();
+    auto args = GenerateArgs();
 
     args.outputDir = argv[0];
     args.namespaceName = argv[1];
     args.category = argv[2];
-    args.inputFiles = readFileList(argv[3]);
+
+    for (int i = 3; i < argc; ++i)
+        args.inputFiles.emplace_back(argv[i]);
 
     if (args.inputFiles.empty())
         throw std::runtime_error("Error: no input files specified");
@@ -226,16 +193,26 @@ InitArgs getInitArgs(int argc, char* argv[])
     return args;
 }
 
-void runEmbed(const EmbedArgs& args)
+void runGenerate(const GenerateArgs& args)
 {
-    auto varPrefix = args.namespaceName + "_" + std::to_string(args.index);
-    writeDataFile(args.inputFile, args.outputC, varPrefix);
-}
+    std::filesystem::create_directories(args.outputDir);
 
-void runInit(const InitArgs& args)
-{
-    writeInitHeader(args);
-    writeEntriesCpp(args);
+    for (size_t i = 0; i < args.inputFiles.size(); ++i)
+    {
+        auto varPrefix = args.namespaceName + "_" + std::to_string(i);
+        auto outputPath = args.outputDir + "/BinaryResource"
+            + std::to_string(i) + ".c";
+        auto content = generateDataFile(args.inputFiles[i], varPrefix);
+        writeFileIfChanged(outputPath, content);
+    }
+
+    auto headerContent = generateInitHeader(args);
+    writeFileIfChanged(
+        args.outputDir + "/" + args.namespaceName + ".h", headerContent);
+
+    auto cppContent = generateEntriesCpp(args);
+    writeFileIfChanged(
+        args.outputDir + "/" + args.namespaceName + ".cpp", cppContent);
 }
 
 std::string parseCommand(int argc, char* argv[])
@@ -243,7 +220,7 @@ std::string parseCommand(int argc, char* argv[])
     if (argc < 2)
     {
         throw std::runtime_error(
-            "Usage: ResourceGenerator <embed|init> ...");
+            "Usage: ResourceGenerator generate ...");
     }
 
     return {argv[1]};
@@ -253,21 +230,16 @@ void run(int argc, char* argv[])
 {
     auto command = parseCommand(argc, argv);
 
-    if (command == "embed")
+    if (command == "generate")
     {
-        auto args = getEmbedArgs(argc - 2, argv + 2);
-        runEmbed(args);
-    }
-    else if (command == "init")
-    {
-        auto args = getInitArgs(argc - 2, argv + 2);
-        runInit(args);
+        auto args = getGenerateArgs(argc - 2, argv + 2);
+        runGenerate(args);
     }
     else
     {
         throw std::runtime_error(
             "Unknown command: " + command +
-            "\nUsage: ResourceGenerator <embed|init> ...");
+            "\nUsage: ResourceGenerator generate ...");
     }
 }
 
