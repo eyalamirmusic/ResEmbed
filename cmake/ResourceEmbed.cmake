@@ -6,7 +6,7 @@ function(embed_resources TARGET)
     endif()
 
     if(NOT ARG_NAMESPACE)
-        set(ARG_NAMESPACE "ResourceData")
+        set(ARG_NAMESPACE "Resources")
     endif()
 
     set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/${ARG_NAMESPACE}")
