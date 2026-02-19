@@ -1,0 +1,2 @@
+add_subdirectory(BasicUse)
+add_subdirectory(GeneratedCodeTest)
