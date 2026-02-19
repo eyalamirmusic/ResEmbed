@@ -11,7 +11,7 @@ using View = std::span<const unsigned char>;
 using ResourceMap = std::map<std::string, View>;
 using CategoryMap = std::map<std::string, ResourceMap>;
 
-inline constexpr auto DefaultCategory = "ResEmbed";
+inline constexpr auto defaultCategory = "Resources";
 
 struct Entry
 {
@@ -20,7 +20,7 @@ struct Entry
     Entry(const unsigned char* dataToUse,
           unsigned long sizeToUse,
           const char* nameToUse,
-          const char* categoryToUse = "ResEmbed")
+          const char* categoryToUse = defaultCategory)
         : data(dataToUse, sizeToUse), name(nameToUse), category(categoryToUse) {}
 
     View data;
@@ -55,7 +55,7 @@ struct DataView
     View dataView;
 };
 
-DataView get(const std::string& name, const std::string& category = DefaultCategory);
+DataView get(const std::string& name, const std::string& category = defaultCategory);
 
 ResourceMap getCategory(const std::string& category);
 

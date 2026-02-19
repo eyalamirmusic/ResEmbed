@@ -2,11 +2,11 @@ function(embed_resources TARGET)
     cmake_parse_arguments(PARSE_ARGV 1 ARG "" "CATEGORY;NAMESPACE" "FILES")
 
     if(NOT ARG_CATEGORY)
-        set(ARG_CATEGORY "ResEmbed")
+        set(ARG_CATEGORY "Resources")
     endif()
 
     if(NOT ARG_NAMESPACE)
-        set(ARG_NAMESPACE "ResEmbed")
+        set(ARG_NAMESPACE "Resources")
     endif()
 
     get_target_property(TARGET_BINARY_DIR ${TARGET} BINARY_DIR)

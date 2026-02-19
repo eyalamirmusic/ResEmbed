@@ -6,11 +6,11 @@ extern const unsigned long resource_0_size;
 
 #include <ResEmbed/ResEmbed.h>
 
-namespace ResEmbed
+namespace Resources
 {
-const Entries& getResourceEntries()
+const ResEmbed::Entries& getResourceEntries()
 {
-    static const Entries entries = {
+    static const ResEmbed::Entries entries = {
         {resource_0_data, resource_0_size, "data.txt"}
     };
 

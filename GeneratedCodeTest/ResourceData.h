@@ -2,8 +2,8 @@
 
 #include <ResEmbed/ResEmbed.h>
 
-namespace ResEmbed
+namespace Resources
 {
-const Entries& getResourceEntries();
-static const Initializer resourceInitializer {getResourceEntries()};
+const ResEmbed::Entries& getResourceEntries();
+static const ResEmbed::Initializer resourceInitializer {getResourceEntries()};
 }
