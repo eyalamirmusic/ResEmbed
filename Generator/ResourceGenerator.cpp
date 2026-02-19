@@ -97,7 +97,7 @@ std::string generateEntriesCpp(const std::string& namespaceName,
 {
     auto out = std::ostringstream();
 
-    out << "#include <ResEmbed/ResEmbed.h>\n\n";
+    out << "#include <ResEmbed/Entries.h>\n\n";
 
     out << "extern \"C\"\n{\n";
     for (size_t i = 0; i < inputFiles.size(); ++i)
@@ -141,7 +141,8 @@ std::string generateInitHeader(const std::string& namespaceName)
     auto out = std::ostringstream();
 
     out << "#pragma once\n\n";
-    out << "#include <ResEmbed/ResEmbed.h>\n\n";
+    out << "#include <ResEmbed/ResEmbed.h>\n";
+    out << "#include <ResEmbed/Entries.h>\n\n";
     out << "namespace " << namespaceName << "\n";
     out << "{\n";
     out << "const ResEmbed::Entries& getResourceEntries();\n";

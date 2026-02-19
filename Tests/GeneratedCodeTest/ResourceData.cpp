@@ -1,10 +1,12 @@
+#include <ResEmbed/ResEmbed.h>
+#include <ResEmbed/Entries.h>
+
 extern "C"
 {
 extern const unsigned char resource_0_data[];
 extern const unsigned long resource_0_size;
 }
 
-#include <ResEmbed/ResEmbed.h>
 
 namespace Resources
 {

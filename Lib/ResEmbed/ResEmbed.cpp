@@ -1,38 +1,44 @@
-#include <ResEmbed/ResEmbed.h>
-#include <mutex>
+#include "ResEmbed.h"
+#include "InternalStorage.h"
 
 namespace ResEmbed
 {
-std::mutex mutex;
+DataView::DataView(const View& viewToUse)
+    : dataView(viewToUse) {}
 
-CategoryMap& getMap()
+DataView::Iterator DataView::begin() const { return dataView.begin(); }
+
+DataView::Iterator DataView::end() const { return dataView.end(); }
+
+const void* DataView::asRaw() const { return data(); }
+
+const char* DataView::asCharPointer() const
 {
-    static CategoryMap map;
-    return map;
+    return static_cast<const char*>(asRaw());
 }
+
+const unsigned char* DataView::data() const { return dataView.data(); }
+
+bool DataView::empty() const { return size() == 0; }
+bool DataView::isValid() const { return !empty(); }
+
+DataView::operator bool() const { return isValid(); }
+
+size_t DataView::size() const { return dataView.size(); }
+
+int DataView::getSize() const { return static_cast<int>(size()); }
+
+std::string DataView::toString() const { return {asCharPointer(), size()}; }
 
 DataView get(const std::string& name, const std::string& category)
 {
-    auto lock = std::lock_guard(mutex);
-    return {getMap()[category][name]};
+    auto lock = std::lock_guard(Detail::getMutex());
+    return {Detail::getMap()[category][name]};
 }
 
 ResourceMap getCategory(const std::string& category)
 {
-    auto lock = std::lock_guard(mutex);
-    return getMap()[category];
-}
-
-void registerEntries(const Entries& entries)
-{
-    auto lock = std::lock_guard(mutex);
-
-    for (auto& entry: entries)
-        getMap()[entry.category][entry.name] = entry.data;
-}
-
-Initializer::Initializer(const Entries& entries)
-{
-    registerEntries(entries);
+    auto lock = std::lock_guard(Detail::getMutex());
+    return Detail::getMap()[category];
 }
 } // namespace ResEmbed

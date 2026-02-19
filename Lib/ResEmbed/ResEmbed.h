@@ -1,61 +1,37 @@
 #pragma once
 
+#include "Common.h"
 #include <map>
-#include <span>
-#include <string>
-#include <vector>
 
 namespace ResEmbed
 {
-using View = std::span<const unsigned char>;
-
-
-inline constexpr auto defaultCategory = "Resources";
-
-struct Entry
+class DataView
 {
-    Entry() = default;
-
-    Entry(const unsigned char* dataToUse,
-          unsigned long sizeToUse,
-          const char* nameToUse,
-          const char* categoryToUse = defaultCategory)
-        : data(dataToUse, sizeToUse), name(nameToUse), category(categoryToUse) {}
-
-    View data;
-    std::string name;
-    std::string category;
-};
-
-using Entries = std::vector<Entry>;
-
-struct DataView
-{
+public:
     using Iterator = View::iterator;
 
     DataView() = default;
+    DataView(const View& viewToUse);
 
-    DataView(const View& viewToUse)
-        : dataView(viewToUse) {}
+    Iterator begin() const;
+    Iterator end() const;
 
-    Iterator begin() const { return dataView.begin(); }
-    Iterator end() const { return dataView.end(); }
+    const void* asRaw() const;
+    const char* asCharPointer() const;
 
-    const void* asRaw() const { return data(); }
-    const char* asCharPointer() const { return static_cast<const char*>(asRaw()); }
+    const unsigned char* data() const;
 
-    const unsigned char* data() const { return dataView.data(); }
+    bool empty() const;
+    bool isValid() const;
 
-    bool empty() const { return size() == 0; }
-    bool isValid() const { return !empty(); }
+    explicit operator bool() const;
 
-    explicit operator bool() const { return isValid(); }
+    size_t size() const;
+    int getSize() const;
 
-    size_t size() const { return dataView.size(); }
-    int getSize() const { return static_cast<int>(size()); }
+    std::string toString() const;
 
-    std::string toString() const { return {asCharPointer(), size()}; }
-
+private:
     View dataView;
 };
 
@@ -65,9 +41,4 @@ using CategoryMap = std::map<std::string, ResourceMap>;
 DataView get(const std::string& name, const std::string& category = defaultCategory);
 
 ResourceMap getCategory(const std::string& category);
-
-struct Initializer
-{
-    Initializer(const Entries& entries);
-};
 } // namespace ResEmbed
