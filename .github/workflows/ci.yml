@@ -43,3 +43,24 @@ jobs:
         run: cmake -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
       - name: Build
         run: cmake --build build -- -sdk iphonesimulator
+
+  emscripten:
+    name: Emscripten (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            os: ubuntu-latest
+          - name: macOS
+            os: macos-latest
+          - name: Windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+      - name: Configure
+        run: emcmake cmake -B build -G Ninja
+      - name: Build
+        run: cmake --build build
