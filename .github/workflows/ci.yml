@@ -36,11 +36,12 @@ jobs:
         run: cmake --build build
 
   ios:
+    name: iOS
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+        run: cmake -B build -G Xcode -DCMAKE_SYSTEM_NAME=iOSAct -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
       - name: Build
         run: cmake --build build -- -sdk iphonesimulator
 
