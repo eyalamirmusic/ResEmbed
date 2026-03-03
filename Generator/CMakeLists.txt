@@ -6,8 +6,15 @@ if(PROJECT_NAME)
 
     message(STATUS "Building ResEmbed Generator")
 
+    if(CMAKE_CROSSCOMPILING)
+        set(_resembed_env_cmd ${CMAKE_COMMAND} -E env --unset=CC --unset=CXX)
+    else()
+        set(_resembed_env_cmd)
+    endif()
+
     execute_process(
-        COMMAND ${CMAKE_COMMAND}
+        COMMAND ${_resembed_env_cmd}
+            ${CMAKE_COMMAND}
             "${CMAKE_CURRENT_SOURCE_DIR}"
             -DCMAKE_BUILD_TYPE=Release
         WORKING_DIRECTORY "${host_dir}"
