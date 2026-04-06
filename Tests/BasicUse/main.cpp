@@ -5,7 +5,7 @@
 void printResource(const std::string& name, const std::string& category)
 {
     auto d = ResEmbed::get(name, category);
-    std::cout << d.toString() << std::endl;
+    std::cout << d.toStringView() << std::endl;
 }
 
 int main()

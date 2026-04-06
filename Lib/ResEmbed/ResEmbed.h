@@ -30,6 +30,7 @@ public:
     int getSize() const;
 
     std::string toString() const;
+    std::string_view toStringView() const;
 
 private:
     View dataView;
