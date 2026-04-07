@@ -1,7 +1,8 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.24)
 project(ResEmbed)
 
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_LINK_LIBRARIES_STRATEGY REORDER_FREELY)
 
 add_subdirectory(Lib)
 
