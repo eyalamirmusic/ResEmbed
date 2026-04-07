@@ -97,7 +97,7 @@ std::string generateEntriesCpp(const std::string& namespaceName,
 {
     auto out = std::ostringstream();
 
-    out << "#include <ResEmbed/Entries.h>\n\n";
+    out << "#include \"" << namespaceName << ".h\"\n\n";
 
     out << "extern \"C\"\n{\n";
     for (size_t i = 0; i < inputFiles.size(); ++i)

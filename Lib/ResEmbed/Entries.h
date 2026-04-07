@@ -21,6 +21,8 @@ struct Entry
 
 using Entries = std::vector<Entry>;
 
+void registerEntries(const Entries& entries);
+
 struct Initializer
 {
     Initializer(const Entries& entries);

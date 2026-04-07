@@ -1,3 +1,5 @@
+#include "Lib.h"
+
 #include <iostream>
 #include <ResEmbed/ResEmbed.h>
 

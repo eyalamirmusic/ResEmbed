@@ -12,6 +12,12 @@ include(CMake/ResEmbed.cmake)
 option(RESOURCE_EMBEDDER_TESTS "Build ResourceEmbedder tests" OFF)
 
 if(PROJECT_IS_TOP_LEVEL OR RESOURCE_EMBEDDER_TESTS)
+    if(MSVC)
+        add_compile_options(/W4)
+    else()
+        add_compile_options(-Wall -Wextra -Wpedantic)
+    endif()
+
     add_subdirectory(Tests)
     add_subdirectory(Examples)
 endif()

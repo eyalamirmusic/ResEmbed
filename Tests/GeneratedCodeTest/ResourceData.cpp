@@ -1,5 +1,4 @@
-#include <ResEmbed/ResEmbed.h>
-#include <ResEmbed/Entries.h>
+#include "ResourceData.h"
 
 extern "C"
 {
