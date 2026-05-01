@@ -1,5 +1,4 @@
 #include "Lib.h"
-#include <Resources.h>
 
 int main()
 {

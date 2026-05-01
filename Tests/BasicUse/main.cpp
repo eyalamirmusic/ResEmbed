@@ -1,5 +1,4 @@
-#include <BinaryData.h>
-#include "Resources.h"
+#include <ResEmbed/ResEmbed.h>
 #include <iostream>
 
 static void printResource(const std::string& name, const std::string& category)

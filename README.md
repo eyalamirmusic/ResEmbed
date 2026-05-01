@@ -36,7 +36,7 @@ res_embed_add(MyProject FILES "Resource.txt")
 **Main.cpp:**
 
 ```cpp
-#include <Resources.h>
+#include <ResEmbed/ResEmbed.h>
 #include <iostream>
 
 int main()
@@ -148,7 +148,11 @@ for (auto& [name, data] : resources)
     std::cout << name << ": " << data.size() << " bytes" << std::endl;
 ```
 
-Each `res_embed_add` call generates a header named `<Namespace>.h` (e.g., `Resources.h`, `Shaders.h`). You must `#include` this header in at least one translation unit in your target to register the resources. If a generated header is not included, the corresponding resources will not be available at runtime.
+Each `res_embed_add` call also generates a small registration source file that the CMake function attaches to the target automatically. You do **not** need to include any generated header for resources to be available at runtime — `#include <ResEmbed/ResEmbed.h>` is enough.
+
+When `res_embed_add` is called on a static library, the registration source is propagated as an `INTERFACE` source so that any executable (or shared library) linking the static library compiles the registration into the final binary. This avoids the linker dead-stripping the static initializer that performs registration.
+
+If you want programmatic access to the entries for a given namespace (advanced use), include the generated `<Namespace>.h` and call `<Namespace>::getResourceEntries()`.
 
 ### Alternatives
 There are many existing similar solutions to this problem.

@@ -146,8 +146,21 @@ std::string generateInitHeader(const std::string& namespaceName)
     out << "namespace " << namespaceName << "\n";
     out << "{\n";
     out << "const ResEmbed::Entries& getResourceEntries();\n";
-    out << "static const ResEmbed::Initializer resourceInitializer "
-        << "{getResourceEntries()};\n";
+    out << "}\n";
+
+    return out.str();
+}
+
+std::string generateRegisterCpp(const std::string& namespaceName)
+{
+    auto out = std::ostringstream();
+
+    out << "#include \"" << namespaceName << ".h\"\n\n";
+    out << "namespace\n";
+    out << "{\n";
+    out << "const ResEmbed::Initializer "
+        << namespaceName << "_resourceInitializer "
+        << "{" << namespaceName << "::getResourceEntries()};\n";
     out << "}\n";
 
     return out.str();
@@ -212,6 +225,10 @@ void runGenerateRegistry(const std::string& configPath)
         config.outputDir + "/" + config.namespaceName + ".cpp",
         generateEntriesCpp(config.namespaceName, config.category,
                            config.inputFiles));
+
+    writeFileIfChanged(
+        config.outputDir + "/" + config.namespaceName + "_Register.cpp",
+        generateRegisterCpp(config.namespaceName));
 }
 
 std::string parseCommand(int argc, char* argv[])

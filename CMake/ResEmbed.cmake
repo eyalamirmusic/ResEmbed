@@ -62,7 +62,10 @@ function(res_embed_add TARGET)
     list(JOIN ABSOLUTE_FILES "\n" FILE_LIST)
     file(WRITE "${CONFIG_FILE}" "${GENERATED_DIR}\n${ARG_NAMESPACE}\n${ARG_CATEGORY}\n${FILE_LIST}\n")
 
-    set(REGISTRY_FILES "${GENERATED_DIR}/${ARG_NAMESPACE}.h" "${GENERATED_DIR}/${ARG_NAMESPACE}.cpp")
+    set(REGISTRY_HEADER "${GENERATED_DIR}/${ARG_NAMESPACE}.h")
+    set(REGISTRY_CPP "${GENERATED_DIR}/${ARG_NAMESPACE}.cpp")
+    set(REGISTER_CPP "${GENERATED_DIR}/${ARG_NAMESPACE}_Register.cpp")
+    set(REGISTRY_FILES "${REGISTRY_HEADER}" "${REGISTRY_CPP}" "${REGISTER_CPP}")
 
     add_custom_command(
         OUTPUT ${REGISTRY_FILES}
@@ -75,5 +78,18 @@ function(res_embed_add TARGET)
 
     target_include_directories(${TARGET} PUBLIC "${GENERATED_DIR}")
     target_link_libraries(${TARGET} PUBLIC ResEmbed)
-    target_sources(${TARGET} PRIVATE ${DATA_FILES} ${REGISTRY_FILES})
+    target_sources(${TARGET} PRIVATE ${DATA_FILES} ${REGISTRY_HEADER} ${REGISTRY_CPP})
+
+    # The register cpp holds the static Initializer that registers the
+    # resources at startup. For static libraries the linker may dead-strip
+    # an object whose only symbols are referenced by a static initializer,
+    # so we propagate it as an INTERFACE source — the consuming executable
+    # (or shared library) compiles it directly, which guarantees the
+    # initializer ends up in the final binary.
+    get_target_property(TARGET_TYPE ${TARGET} TYPE)
+    if(TARGET_TYPE STREQUAL "STATIC_LIBRARY")
+        target_sources(${TARGET} INTERFACE ${REGISTER_CPP})
+    else()
+        target_sources(${TARGET} PRIVATE ${REGISTER_CPP})
+    endif()
 endfunction()

@@ -1,4 +1,4 @@
-#include <Resources.h>
+#include <ResEmbed/ResEmbed.h>
 #include <iostream>
 
 int main()
