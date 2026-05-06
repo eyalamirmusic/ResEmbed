@@ -12,11 +12,24 @@ if(PROJECT_NAME)
         set(_resembed_env_cmd)
     endif()
 
+    get_property(_resembed_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+
+    set(_resembed_generator_args -G "${CMAKE_GENERATOR}")
+    if(CMAKE_GENERATOR_PLATFORM)
+        list(APPEND _resembed_generator_args -A "${CMAKE_GENERATOR_PLATFORM}")
+    endif()
+    if(CMAKE_GENERATOR_TOOLSET)
+        list(APPEND _resembed_generator_args -T "${CMAKE_GENERATOR_TOOLSET}")
+    endif()
+    if(NOT _resembed_is_multi_config)
+        list(APPEND _resembed_generator_args -DCMAKE_BUILD_TYPE=Release)
+    endif()
+
     execute_process(
         COMMAND ${_resembed_env_cmd}
             ${CMAKE_COMMAND}
             "${CMAKE_CURRENT_SOURCE_DIR}"
-            -DCMAKE_BUILD_TYPE=Release
+            ${_resembed_generator_args}
         WORKING_DIRECTORY "${host_dir}"
         OUTPUT_QUIET
         RESULT_VARIABLE result)
