@@ -80,15 +80,25 @@ function(res_embed_add TARGET)
     target_link_libraries(${TARGET} PUBLIC ResEmbed)
     target_sources(${TARGET} PRIVATE ${DATA_FILES} ${REGISTRY_HEADER} ${REGISTRY_CPP})
 
-    # The register cpp holds the static Initializer that registers the
+    # The register cpp holds the static initializer that registers the
     # resources at startup. For static libraries the linker may dead-strip
     # an object whose only symbols are referenced by a static initializer,
     # so we propagate it as an INTERFACE source — the consuming executable
     # (or shared library) compiles it directly, which guarantees the
     # initializer ends up in the final binary.
+    #
+    # The generator expression filters out static-library consumers in
+    # the propagation chain: a static lib that compiles the registrar
+    # produces an archive member with no externally-visible symbols
+    # (only the anonymous-namespace registrar instance), which trips a
+    # `ranlib: has no symbols` warning. Skipping static-lib consumers
+    # avoids the empty archive members; executables, shared libs,
+    # modules, and object libs all still compile the TU, so the static
+    # initializer still lands in the final binary.
     get_target_property(TARGET_TYPE ${TARGET} TYPE)
     if(TARGET_TYPE STREQUAL "STATIC_LIBRARY")
-        target_sources(${TARGET} INTERFACE ${REGISTER_CPP})
+        target_sources(${TARGET} INTERFACE
+            $<$<NOT:$<STREQUAL:$<TARGET_PROPERTY:TYPE>,STATIC_LIBRARY>>:${REGISTER_CPP}>)
     else()
         target_sources(${TARGET} PRIVATE ${REGISTER_CPP})
     endif()
