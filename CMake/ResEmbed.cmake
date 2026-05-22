@@ -1,5 +1,5 @@
 function(res_embed_add TARGET)
-    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "CATEGORY;DIRECTORY;NAMESPACE" "FILES")
+    cmake_parse_arguments(PARSE_ARGV 1 ARG "" "CATEGORY;DIRECTORY;NAMESPACE;BASE_DIRECTORY" "FILES")
 
     if(NOT ARG_CATEGORY)
         set(ARG_CATEGORY "Resources")
@@ -58,9 +58,13 @@ function(res_embed_add TARGET)
         endforeach()
     endif()
 
+    # BASE_DIRECTORY is optional. When set, the generator stores each file
+    # under its path relative to BASE_DIRECTORY (e.g. "assets/foo.js"). When
+    # empty, the generator falls back to basename-only keys for backwards
+    # compatibility — the historical behavior of res_embed_add.
     set(CONFIG_FILE "${GENERATED_DIR}/${ARG_NAMESPACE}.cfg")
     list(JOIN ABSOLUTE_FILES "\n" FILE_LIST)
-    file(WRITE "${CONFIG_FILE}" "${GENERATED_DIR}\n${ARG_NAMESPACE}\n${ARG_CATEGORY}\n${FILE_LIST}\n")
+    file(WRITE "${CONFIG_FILE}" "${GENERATED_DIR}\n${ARG_NAMESPACE}\n${ARG_CATEGORY}\n${ARG_BASE_DIRECTORY}\n${FILE_LIST}\n")
 
     set(REGISTRY_HEADER "${GENERATED_DIR}/${ARG_NAMESPACE}.h")
     set(REGISTRY_CPP "${GENERATED_DIR}/${ARG_NAMESPACE}.cpp")

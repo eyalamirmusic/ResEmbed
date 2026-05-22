@@ -1,3 +1,4 @@
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -30,6 +31,21 @@ std::string getFilename(const std::string& path)
         return path.substr(pos + 1);
 
     return path;
+}
+
+// Key under which a file is registered in the runtime ResourceMap. When
+// baseDir is empty, falls back to the historical basename-only behavior
+// (collapses directory structure). When baseDir is set, returns the path
+// relative to baseDir using forward slashes — so consumers can address
+// nested files (e.g. "assets/index-abc.js") with stable, cross-platform
+// keys that match URL paths.
+std::string resourceKey(const std::string& path, const std::string& baseDir)
+{
+    if (baseDir.empty())
+        return getFilename(path);
+
+    auto relative = std::filesystem::relative(path, baseDir);
+    return relative.generic_string();
 }
 
 bool writeFileIfChanged(const std::string& path, const std::string& content)
@@ -93,6 +109,7 @@ std::string generateDataFile(const std::string& input,
 
 std::string generateEntriesCpp(const std::string& namespaceName,
                                const std::string& category,
+                               const std::string& baseDir,
                                const std::vector<std::string>& inputFiles)
 {
     auto out = std::ostringstream();
@@ -117,7 +134,7 @@ std::string generateEntriesCpp(const std::string& namespaceName,
     for (size_t i = 0; i < inputFiles.size(); ++i)
     {
         auto varPrefix = namespaceName + "_" + std::to_string(i);
-        auto resourceName = getFilename(inputFiles[i]);
+        auto resourceName = resourceKey(inputFiles[i], baseDir);
         out << "        {" << varPrefix << "_data, " << varPrefix << "_size, \""
             << resourceName << "\", \""
             << category << "\"}";
@@ -171,6 +188,7 @@ struct ConfigFile
     std::string outputDir;
     std::string namespaceName;
     std::string category;
+    std::string baseDir;
     std::vector<std::string> inputFiles;
 };
 
@@ -192,6 +210,11 @@ ConfigFile readConfigFile(const std::string& path)
 
     if (!std::getline(in, config.category) || config.category.empty())
         throw std::runtime_error("Error: config file missing category");
+
+    // baseDir may legitimately be empty (opt-in feature: when empty,
+    // resourceKey falls back to basename-only naming).
+    if (!std::getline(in, config.baseDir))
+        throw std::runtime_error("Error: config file missing base directory line");
 
     while (std::getline(in, line))
     {
@@ -224,7 +247,7 @@ void runGenerateRegistry(const std::string& configPath)
     writeFileIfChanged(
         config.outputDir + "/" + config.namespaceName + ".cpp",
         generateEntriesCpp(config.namespaceName, config.category,
-                           config.inputFiles));
+                           config.baseDir, config.inputFiles));
 
     writeFileIfChanged(
         config.outputDir + "/" + config.namespaceName + "_Register.cpp",
