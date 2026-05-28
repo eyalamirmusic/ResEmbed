@@ -100,22 +100,31 @@ All examples are available under `Examples/` in the repository.
 
 ```cmake
 res_embed_add(<target>
-    DIRECTORY <dir> | FILES <file1> [<file2> ...]
+    FILES <file1> [<file2> ...]              # explicit list (configure-time)
+    | MANIFEST <file>                        # newline-separated list (build-time)
+    | SCAN_DIR <dir>                         # recursive walk (build-time)
+    | DIRECTORY <dir>                        # back-compat alias for SCAN_DIR
     [NAMESPACE <namespace>]
     [CATEGORY <category>]
+    [BASE_DIRECTORY <dir>]
+    [DEPENDS <target-or-file> ...]
 )
 ```
 
 ### Parameters
 
-| Parameter   | Required | Default       | Description                                           |
-|-------------|----------|---------------|-------------------------------------------------------|
-| `DIRECTORY` | Either   | -             | Recursively embed all files from a directory.         |
-| `FILES`     | Either   | -             | Embed specific files by path.                         |
-| `NAMESPACE` | No       | `Resources`   | C++ namespace for the generated header.               |
-| `CATEGORY`  | No       | `Resources`   | Category string used to group resources at runtime.   |
+| Parameter        | Required | Default       | Description                                                                                          |
+|------------------|----------|---------------|------------------------------------------------------------------------------------------------------|
+| `FILES`          | Mode     | -             | Explicit list of files. The set is fixed at configure time; contents are watched via a depfile.      |
+| `MANIFEST`       | Mode     | -             | Path to a newline-separated list of files, typically produced by an upstream rule at build time.     |
+| `SCAN_DIR`       | Mode     | -             | Recursively walk a directory at build time. Combine with `DEPENDS` for build-output directories.     |
+| `DIRECTORY`      | Mode     | -             | Back-compat alias for `SCAN_DIR` with an extra `CONFIGURE_DEPENDS` glob for add/remove detection.    |
+| `NAMESPACE`      | No       | `Resources`   | C++ namespace for the generated header and basename of the generated files.                          |
+| `CATEGORY`       | No       | `Resources`   | Category string used to group resources at runtime.                                                  |
+| `BASE_DIRECTORY` | No       | -             | When set, each resource is keyed by its path relative to this directory (e.g. `assets/index.js`). Without it, keys are the basename only. |
+| `DEPENDS`        | No       | -             | Extra build-graph dependencies — typically a stamp produced by the rule that fills `SCAN_DIR` or writes `MANIFEST`. |
 
-`DIRECTORY` and `FILES` are mutually exclusive. When using `DIRECTORY`, files are discovered with `GLOB_RECURSE` and `CONFIGURE_DEPENDS`, so adding or removing files will automatically trigger a CMake reconfigure.
+Exactly one of `FILES`, `MANIFEST`, `SCAN_DIR`, or `DIRECTORY` must be specified.
 
 You can call `res_embed_add` multiple times on the same target with different namespaces:
 
@@ -123,6 +132,74 @@ You can call `res_embed_add` multiple times on the same target with different na
 res_embed_add(MyApp DIRECTORY shaders NAMESPACE Shaders CATEGORY "Shaders")
 res_embed_add(MyApp DIRECTORY textures NAMESPACE Textures CATEGORY "Textures")
 ```
+
+### How discovery works
+
+The four modes differ in *when* the list of files is determined and how changes propagate.
+
+**`FILES`** — configure-time list. The CMake call writes a manifest file containing the absolute paths you passed. The build then reads that manifest. Adding or removing entries from `FILES` requires re-running CMake (which is fine — `CMakeLists.txt` itself changed). Editing the contents of any listed file does **not** require a reconfigure: the generator emits a [Make-format depfile](https://www.gnu.org/software/make/manual/html_node/Generating-Prerequisites-Automatically.html) and Ninja re-runs the embedding step automatically.
+
+**`MANIFEST`** — build-time list, written by something else. The manifest is a newline-separated file of paths. The embedding step depends on the manifest, so whenever an upstream rule rewrites the manifest, embedding re-runs. Use this when another build step *already* knows exactly which files it produced (e.g. a code generator emitting a `.manifest` next to its outputs).
+
+**`SCAN_DIR`** — build-time directory walk. The generator runs `recursive_directory_iterator` over the directory each time it executes. The set of files is whatever exists on disk at that moment. Because the scan happens during the build, you almost always pair `SCAN_DIR` with `DEPENDS <stamp>`, where `<stamp>` is touched by the rule that *fills* the directory:
+
+```cmake
+add_custom_command(
+    OUTPUT  "${MY_STAMP}"
+    COMMAND <build-step-that-populates-dist-dir>
+    COMMAND ${CMAKE_COMMAND} -E touch "${MY_STAMP}"
+    DEPENDS <input-sources>)
+
+res_embed_add(MyApp
+    SCAN_DIR       "${DIST_DIR}"
+    BASE_DIRECTORY "${DIST_DIR}"
+    DEPENDS        "${MY_STAMP}"
+    NAMESPACE      WebResources)
+```
+
+Whenever the upstream rule touches `MY_STAMP`, the generator re-scans the directory, picks up whatever files exist, and re-emits the registry — all inside a single `cmake --build` invocation. No configure-time globbing of build outputs, and no two-build dance.
+
+**`DIRECTORY`** — back-compat alias for `SCAN_DIR`, with an added configure-time `CONFIGURE_DEPENDS` glob that re-triggers CMake when files are added or removed from a *static* directory you check into source control. Use this for fixed asset folders (`shaders/`, `textures/`); use `SCAN_DIR` + `DEPENDS` for build outputs.
+
+### Generated files and rebuild semantics
+
+A single `res_embed_add(<target> NAMESPACE <NS> ...)` call emits three files under the target's binary directory in `<target>-<NS>-Generated/`:
+
+- `<NS>.cpp` — the embedded byte arrays plus `<NS>::getResourceEntries()`.
+- `<NS>.h` — declares `getResourceEntries()` for programmatic access.
+- `<NS>_Register.cpp` — anonymous-namespace static initializer that registers the entries into the runtime map.
+
+Alongside them the generator writes `<NS>.d`, a Make-format depfile listing every file consumed by the last run. Ninja reads this via the custom command's `DEPFILE` clause and re-runs the embed step whenever one of those files changes — without involving CMake at all. The depfile is what makes content edits cheap: only the bytes that actually changed flow through the rebuild.
+
+The list of files itself (which files exist, not what's in them) is tracked through the chosen mode:
+
+- `FILES`: changes when you edit `CMakeLists.txt` → CMake reconfigure.
+- `MANIFEST`: changes when an upstream rule rewrites the manifest → embed step rebuilds via its `DEPENDS`.
+- `SCAN_DIR`: changes when the directory's contents change → embed step rebuilds via the `DEPENDS <stamp>` you pass.
+- `DIRECTORY`: as above, plus a `CONFIGURE_DEPENDS` glob that reconfigures CMake when files appear or vanish.
+
+### Driving a code-generator → embedder chain
+
+A common pattern: a code-generator emits files into a directory, and you want everything in that directory embedded. Wire it as:
+
+```cmake
+set(GEN_STAMP "${CMAKE_CURRENT_BINARY_DIR}/codegen.stamp")
+add_custom_command(
+    OUTPUT  "${GEN_STAMP}"
+    COMMAND ${MY_CODEGEN_TOOL} --out "${GEN_OUT_DIR}"
+    COMMAND ${CMAKE_COMMAND} -E touch "${GEN_STAMP}"
+    DEPENDS <inputs that feed the codegen>)
+
+res_embed_add(MyApp
+    SCAN_DIR       "${GEN_OUT_DIR}"
+    BASE_DIRECTORY "${GEN_OUT_DIR}"
+    DEPENDS        "${GEN_STAMP}"
+    NAMESPACE      Generated)
+```
+
+The graph is fully build-time: edit a codegen input → stamp updates → embed rescans → only the .cpp recompiles. One `cmake --build` produces a working binary even from a clean build tree.
+
+If your code generator already emits a list of its outputs (a `manifest.txt`), prefer `MANIFEST` over `SCAN_DIR` — the manifest itself is the dependency edge, and you don't need a separate stamp file.
 
 ## C++ API
 
