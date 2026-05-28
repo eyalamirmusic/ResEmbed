@@ -1,9 +1,13 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
-#include <vector>
 #include <string>
+#include <vector>
+
+namespace fs = std::filesystem;
 
 using Data = std::vector<unsigned char>;
 
@@ -44,7 +48,7 @@ std::string resourceKey(const std::string& path, const std::string& baseDir)
     if (baseDir.empty())
         return getFilename(path);
 
-    auto relative = std::filesystem::relative(path, baseDir);
+    auto relative = fs::relative(path, baseDir);
     return relative.generic_string();
 }
 
@@ -183,6 +187,102 @@ std::string generateRegisterCpp(const std::string& namespaceName)
     return out.str();
 }
 
+// Combined data file: every input's bytes inlined as anonymous-namespace
+// arrays, followed by the Entries-returning function. One TU per
+// res_embed_add call — replaces the historical N+1 split (one .c per
+// resource + entries.cpp).
+std::string generateCombinedDataCpp(const std::string& namespaceName,
+                                    const std::string& category,
+                                    const std::string& baseDir,
+                                    const std::vector<std::string>& inputFiles)
+{
+    auto out = std::ostringstream();
+
+    out << "#include \"" << namespaceName << ".h\"\n\n";
+    out << "namespace\n{\n";
+
+    for (size_t i = 0; i < inputFiles.size(); ++i)
+    {
+        auto data = readDataFrom(inputFiles[i]);
+        out << "const unsigned char data_" << i << "[] = {\n";
+
+        for (size_t j = 0; j < data.size(); ++j)
+        {
+            if (j % 16 == 0)
+                out << "    ";
+
+            out << static_cast<unsigned int>(data[j]);
+
+            if (j + 1 < data.size())
+                out << ",";
+
+            if (j % 16 == 15 || j + 1 == data.size())
+                out << "\n";
+            else
+                out << " ";
+        }
+
+        out << "};\n\n";
+    }
+
+    out << "}\n\n";
+    out << "namespace " << namespaceName << "\n{\n";
+    out << "const ResEmbed::Entries& getResourceEntries()\n{\n";
+    out << "    static const ResEmbed::Entries entries = {\n";
+
+    for (size_t i = 0; i < inputFiles.size(); ++i)
+    {
+        auto resourceName = resourceKey(inputFiles[i], baseDir);
+        out << "        {data_" << i << ", sizeof(data_" << i << "), \""
+            << resourceName << "\", \"" << category << "\"}";
+
+        if (i + 1 < inputFiles.size())
+            out << ",";
+
+        out << "\n";
+    }
+
+    out << "    };\n\n";
+    out << "    return entries;\n";
+    out << "}\n";
+    out << "}\n";
+
+    return out.str();
+}
+
+// Make-format depfile so Ninja re-runs `generate` when any embedded
+// file's contents change without a full CMake reconfigure. The target
+// in the depfile must match the OUTPUT path declared in the CMake
+// custom_command (the data .cpp is the conventional choice).
+std::string escapeDepfilePath(const std::string& path)
+{
+    auto out = std::string();
+    out.reserve(path.size());
+
+    for (auto c: path)
+    {
+        if (c == ' ' || c == '\\' || c == '#' || c == '$')
+            out.push_back('\\');
+
+        out.push_back(c);
+    }
+
+    return out;
+}
+
+std::string generateDepfile(const std::string& outputPath,
+                            const std::vector<std::string>& inputFiles)
+{
+    auto out = std::ostringstream();
+    out << escapeDepfilePath(outputPath) << ":";
+
+    for (auto& input: inputFiles)
+        out << " \\\n  " << escapeDepfilePath(input);
+
+    out << "\n";
+    return out.str();
+}
+
 struct ConfigFile
 {
     std::string outputDir;
@@ -254,6 +354,149 @@ void runGenerateRegistry(const std::string& configPath)
         generateRegisterCpp(config.namespaceName));
 }
 
+struct GenerateArgs
+{
+    std::string scanDir;
+    std::string manifestPath;
+    std::string baseDir;
+    std::string namespaceName;
+    std::string category = "Resources";
+    std::string outputCpp;
+    std::string outputHeader;
+    std::string outputRegister;
+    std::string depfile;
+};
+
+std::vector<std::string> readManifest(const std::string& path)
+{
+    auto in = std::ifstream(path);
+
+    if (!in)
+        throw std::runtime_error("Error: cannot open manifest: " + path);
+
+    auto files = std::vector<std::string>();
+    auto line = std::string();
+
+    while (std::getline(in, line))
+    {
+        if (!line.empty())
+            files.push_back(line);
+    }
+
+    return files;
+}
+
+std::vector<std::string> scanDirectory(const std::string& dir)
+{
+    auto files = std::vector<std::string>();
+
+    if (!fs::exists(dir))
+        return files;
+
+    for (auto& entry: fs::recursive_directory_iterator(dir))
+    {
+        if (entry.is_regular_file())
+            files.push_back(entry.path().generic_string());
+    }
+
+    return files;
+}
+
+GenerateArgs parseGenerateArgs(int argc, char* argv[])
+{
+    auto args = GenerateArgs();
+
+    auto requireValue = [&](int& i, const char* flag) -> std::string
+    {
+        if (i + 1 >= argc)
+            throw std::runtime_error(std::string("Missing value for ") + flag);
+
+        return argv[++i];
+    };
+
+    for (auto i = 2; i < argc; ++i)
+    {
+        auto flag = std::string(argv[i]);
+
+        if (flag == "--scan-dir")
+            args.scanDir = requireValue(i, "--scan-dir");
+        else if (flag == "--manifest")
+            args.manifestPath = requireValue(i, "--manifest");
+        else if (flag == "--base-directory")
+            args.baseDir = requireValue(i, "--base-directory");
+        else if (flag == "--namespace")
+            args.namespaceName = requireValue(i, "--namespace");
+        else if (flag == "--category")
+            args.category = requireValue(i, "--category");
+        else if (flag == "--output-cpp")
+            args.outputCpp = requireValue(i, "--output-cpp");
+        else if (flag == "--output-h")
+            args.outputHeader = requireValue(i, "--output-h");
+        else if (flag == "--output-register")
+            args.outputRegister = requireValue(i, "--output-register");
+        else if (flag == "--depfile")
+            args.depfile = requireValue(i, "--depfile");
+        else
+            throw std::runtime_error("Unknown flag: " + flag);
+    }
+
+    if (args.namespaceName.empty())
+        throw std::runtime_error("--namespace is required");
+    if (args.outputCpp.empty())
+        throw std::runtime_error("--output-cpp is required");
+    if (args.outputHeader.empty())
+        throw std::runtime_error("--output-h is required");
+    if (args.outputRegister.empty())
+        throw std::runtime_error("--output-register is required");
+    if (args.scanDir.empty() == args.manifestPath.empty())
+        throw std::runtime_error(
+            "exactly one of --scan-dir / --manifest is required");
+
+    return args;
+}
+
+void runGenerate(int argc, char* argv[])
+{
+    auto args = parseGenerateArgs(argc, argv);
+
+    auto files = args.manifestPath.empty() ? scanDirectory(args.scanDir)
+                                           : readManifest(args.manifestPath);
+
+    // Sort for deterministic output regardless of filesystem iteration order
+    // (recursive_directory_iterator is unordered on most platforms).
+    std::sort(files.begin(), files.end());
+
+    writeFileIfChanged(args.outputHeader,
+                       generateInitHeader(args.namespaceName));
+
+    writeFileIfChanged(args.outputCpp,
+                       generateCombinedDataCpp(args.namespaceName,
+                                               args.category,
+                                               args.baseDir,
+                                               files));
+
+    writeFileIfChanged(args.outputRegister,
+                       generateRegisterCpp(args.namespaceName));
+
+    if (!args.depfile.empty())
+    {
+        auto depInputs = files;
+
+        if (!args.manifestPath.empty())
+            depInputs.insert(depInputs.begin(), args.manifestPath);
+
+        // writeFileIfChanged would skip writes when the dep list is
+        // unchanged, but ninja stat()'s the depfile every build — write
+        // unconditionally so the mtime is always current.
+        auto out = std::ofstream(args.depfile, std::ios::binary);
+
+        if (!out)
+            throw std::runtime_error("Error: cannot open depfile: " + args.depfile);
+
+        out << generateDepfile(args.outputCpp, depInputs);
+    }
+}
+
 std::string parseCommand(int argc, char* argv[])
 {
     if (argc < 2)
@@ -262,7 +505,11 @@ std::string parseCommand(int argc, char* argv[])
             "Usage: ResourceGenerator <command> ...\n"
             "Commands:\n"
             "  generate-data <output.c> <var_prefix> <input_file>\n"
-            "  generate-registry <config_file>");
+            "  generate-registry <config_file>\n"
+            "  generate --namespace <ns> --output-cpp <p> --output-h <p>\n"
+            "           --output-register <p> [--depfile <p>]\n"
+            "           [--category <c>] [--base-directory <d>]\n"
+            "           (--scan-dir <d> | --manifest <f>)");
     }
 
     return {argv[1]};
@@ -292,6 +539,10 @@ void run(int argc, char* argv[])
         }
 
         runGenerateRegistry(argv[2]);
+    }
+    else if (command == "generate")
+    {
+        runGenerate(argc, argv);
     }
     else
     {
