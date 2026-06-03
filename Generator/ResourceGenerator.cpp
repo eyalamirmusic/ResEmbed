@@ -111,6 +111,38 @@ std::string generateDataFile(const std::string& input,
     return out.str();
 }
 
+// One bucket's .c file: the byte arrays for every resource round-robined
+// into this bucket (global index i where i % bucketCount == bucket). The
+// array names are keyed by the *global* index (namespace_<i>_data) so the
+// registry's extern declarations line up regardless of how resources are
+// distributed across buckets. With bucketCount == file count this collapses
+// to one resource per file. An empty bucket still has to be a well-formed,
+// non-empty translation unit, hence the placeholder typedef.
+std::string generateBucketDataC(const std::string& namespaceName,
+                                const std::vector<std::string>& inputFiles,
+                                size_t bucket,
+                                size_t bucketCount)
+{
+    auto out = std::ostringstream();
+    auto wroteAny = false;
+
+    for (size_t i = bucket; i < inputFiles.size(); i += bucketCount)
+    {
+        if (wroteAny)
+            out << "\n";
+
+        auto varPrefix = namespaceName + "_" + std::to_string(i);
+        out << generateDataFile(inputFiles[i], varPrefix);
+        wroteAny = true;
+    }
+
+    if (!wroteAny)
+        out << "typedef int " << namespaceName << "_" << bucket
+            << "_empty_tu;\n";
+
+    return out.str();
+}
+
 std::string generateEntriesCpp(const std::string& namespaceName,
                                const std::string& category,
                                const std::string& baseDir,
@@ -188,9 +220,10 @@ std::string generateRegisterCpp(const std::string& namespaceName)
 }
 
 // Combined data file: every input's bytes inlined as anonymous-namespace
-// arrays, followed by the Entries-returning function. One TU per
-// res_embed_add call — replaces the historical N+1 split (one .c per
-// resource + entries.cpp).
+// arrays, followed by the Entries-returning function — a single TU for the
+// whole res_embed_add call. Used as the fallback when the C-bucket layout
+// (see --split-count) isn't available: namely C++-only consumers, where a
+// single C++ TU is all we can compile.
 std::string generateCombinedDataCpp(const std::string& namespaceName,
                                     const std::string& category,
                                     const std::string& baseDir,
@@ -365,6 +398,7 @@ struct GenerateArgs
     std::string outputHeader;
     std::string outputRegister;
     std::string depfile;
+    int splitCount = 0;
 };
 
 std::vector<std::string> readManifest(const std::string& path)
@@ -436,6 +470,8 @@ GenerateArgs parseGenerateArgs(int argc, char* argv[])
             args.outputRegister = requireValue(i, "--output-register");
         else if (flag == "--depfile")
             args.depfile = requireValue(i, "--depfile");
+        else if (flag == "--split-count")
+            args.splitCount = std::stoi(requireValue(i, "--split-count"));
         else
             throw std::runtime_error("Unknown flag: " + flag);
     }
@@ -469,11 +505,50 @@ void runGenerate(int argc, char* argv[])
     writeFileIfChanged(args.outputHeader,
                        generateInitHeader(args.namespaceName));
 
-    writeFileIfChanged(args.outputCpp,
-                       generateCombinedDataCpp(args.namespaceName,
-                                               args.category,
-                                               args.baseDir,
-                                               files));
+    if (args.splitCount > 0)
+    {
+        // Split mode: the data bytes go into plain-C .c files (compiled by
+        // the C front-end, which digests large brace-initializer arrays far
+        // faster than C++), and --output-cpp holds only the small Entries
+        // registry that references each array via extern "C". This restores
+        // the historical "resources are C, not C++" property and lets the
+        // build recompile only the bucket that actually changed.
+        //
+        // Resources are round-robined across exactly splitCount .c files,
+        // named <namespace>_<b>.c next to outputCpp. res_embed_add declares
+        // the matching OUTPUT/target_sources set — the count is fixed at
+        // configure time, which is why even the build-time discovery modes
+        // (scan-dir/manifest) can use a fixed bucket count. With splitCount
+        // == file count, each bucket holds exactly one resource.
+        writeFileIfChanged(args.outputCpp,
+                           generateEntriesCpp(args.namespaceName,
+                                              args.category,
+                                              args.baseDir,
+                                              files));
+
+        auto outDir = fs::path(args.outputCpp).parent_path();
+        auto buckets = static_cast<size_t>(args.splitCount);
+
+        for (size_t b = 0; b < buckets; ++b)
+        {
+            auto cPath =
+                (outDir
+                 / (args.namespaceName + "_" + std::to_string(b) + ".c"))
+                    .string();
+
+            writeFileIfChanged(
+                cPath,
+                generateBucketDataC(args.namespaceName, files, b, buckets));
+        }
+    }
+    else
+    {
+        writeFileIfChanged(args.outputCpp,
+                           generateCombinedDataCpp(args.namespaceName,
+                                                   args.category,
+                                                   args.baseDir,
+                                                   files));
+    }
 
     writeFileIfChanged(args.outputRegister,
                        generateRegisterCpp(args.namespaceName));
@@ -508,7 +583,8 @@ std::string parseCommand(int argc, char* argv[])
             "  generate-registry <config_file>\n"
             "  generate --namespace <ns> --output-cpp <p> --output-h <p>\n"
             "           --output-register <p> [--depfile <p>]\n"
-            "           [--category <c>] [--base-directory <d>]\n"
+            "           [--split-count <n>] [--category <c>]\n"
+            "           [--base-directory <d>]\n"
             "           (--scan-dir <d> | --manifest <f>)");
     }
 

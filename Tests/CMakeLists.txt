@@ -1,2 +1,4 @@
 add_subdirectory(BasicUse)
 add_subdirectory(GeneratedCodeTest)
+add_subdirectory(SplitFiles)
+add_subdirectory(Buckets)

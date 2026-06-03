@@ -108,6 +108,7 @@ res_embed_add(<target>
     [CATEGORY <category>]
     [BASE_DIRECTORY <dir>]
     [DEPENDS <target-or-file> ...]
+    [TU_COUNT <n>]
 )
 ```
 
@@ -123,6 +124,7 @@ res_embed_add(<target>
 | `CATEGORY`       | No       | `Resources`   | Category string used to group resources at runtime.                                                  |
 | `BASE_DIRECTORY` | No       | -             | When set, each resource is keyed by its path relative to this directory (e.g. `assets/index.js`). Without it, keys are the basename only. |
 | `DEPENDS`        | No       | -             | Extra build-graph dependencies — typically a stamp produced by the rule that fills `SCAN_DIR` or writes `MANIFEST`. |
+| `TU_COUNT`       | No       | per-resource (FILES) / 8 (others) | Number of `.c` data translation units to emit. See [Translation-unit layout](#translation-unit-layout-and-unity-builds). |
 
 Exactly one of `FILES`, `MANIFEST`, `SCAN_DIR`, or `DIRECTORY` must be specified.
 
@@ -163,9 +165,10 @@ Whenever the upstream rule touches `MY_STAMP`, the generator re-scans the direct
 
 ### Generated files and rebuild semantics
 
-A single `res_embed_add(<target> NAMESPACE <NS> ...)` call emits three files under the target's binary directory in `<target>-<NS>-Generated/`:
+A single `res_embed_add(<target> NAMESPACE <NS> ...)` call emits these files under the target's binary directory in `<target>-<NS>-Generated/`:
 
-- `<NS>.cpp` — the embedded byte arrays plus `<NS>::getResourceEntries()`.
+- `<NS>.cpp` — in the split layout, just `getResourceEntries()` referencing the data arrays via `extern`; in the combined (C++-only) fallback, the byte arrays as well.
+- `<NS>_<i>.c` — split layout: the data translation units, each an `extern "C"` byte array per resource (see [Translation-unit layout](#translation-unit-layout-and-unity-builds)).
 - `<NS>.h` — declares `getResourceEntries()` for programmatic access.
 - `<NS>_Register.cpp` — anonymous-namespace static initializer that registers the entries into the runtime map.
 
@@ -177,6 +180,42 @@ The list of files itself (which files exist, not what's in them) is tracked thro
 - `MANIFEST`: changes when an upstream rule rewrites the manifest → embed step rebuilds via its `DEPENDS`.
 - `SCAN_DIR`: changes when the directory's contents change → embed step rebuilds via the `DEPENDS <stamp>` you pass.
 - `DIRECTORY`: as above, plus a `CONFIGURE_DEPENDS` glob that reconfigures CMake when files appear or vanish.
+
+### Translation-unit layout (and unity builds)
+
+The embedded bytes are emitted as **plain-C `.c` files** (`<NS>_0.c`, `<NS>_1.c`, …), each defining `extern "C"` byte arrays, plus a small `<NS>.cpp` registry that stitches them together via `extern` declarations. This holds in *every* discovery mode, and it's deliberate:
+
+- **The bytes are C, not C++.** Large brace-initializer arrays are compiled by the C front end, which digests them far faster than C++. (This is the same property the README criticizes JUCE's `BinaryData` for, below.)
+- **It's parallel and granular.** The `.c` files compile concurrently, and editing one resource only re-touches the `.c` it lives in.
+
+Resources are round-robined across **N** data TUs, and how `N` is chosen is the only difference between modes:
+
+- **`FILES` mode** knows the resource count when CMake configures, so `N` defaults to **one `.c` per resource** — the finest grain, so a content edit recompiles only that resource's `.c`.
+
+- **`SCAN_DIR` / `MANIFEST` / `DIRECTORY` modes** resolve their file list at *build* time, so CMake can't size `N` to the (unknown) resource count. `N` defaults to **8**. Resources are spread across those 8 buckets; if there are fewer resources than buckets, the surplus `.c` files are empty (and compile instantly).
+
+`TU_COUNT <n>` overrides `N` in any mode. In `FILES` mode it's a cap (never more TUs than resources); in the build-time modes it sets the bucket count outright:
+
+```cmake
+res_embed_add(MyApp SCAN_DIR "${DIST_DIR}" BASE_DIRECTORY "${DIST_DIR}"
+              DEPENDS "${STAMP}" TU_COUNT 16)   # 16 C buckets
+```
+
+> If the consuming project never enabled the `C` language, all modes fall back to a single combined `<NS>.cpp` compiled as C++, so C++-only projects keep building.
+
+#### Coalescing the TUs with unity builds
+
+To go the other way — fewer, bigger TUs — there's no bespoke flag; the generated `.c` files are ordinary target sources, so CMake's native [unity builds](https://cmake.org/cmake/help/latest/prop_tgt/UNITY_BUILD.html) coalesce them with no extra wiring:
+
+```cmake
+add_executable(MyApp Main.cpp)
+res_embed_add(MyApp FILES logo.png font.ttf shader.glsl)
+
+# Compile all the data .c files as a single unity TU:
+set_target_properties(MyApp PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 0)
+```
+
+Use `UNITY_BUILD_BATCH_SIZE <n>` to batch in groups of `n`, or set `CMAKE_UNITY_BUILD=ON` project-wide. You get the single-TU compile profile back when you want it, while the default stays granular and parallel.
 
 ### Driving a code-generator → embedder chain
 
