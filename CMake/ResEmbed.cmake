@@ -237,18 +237,24 @@ function(res_embed_add TARGET)
     # (or shared library) compiles it directly, which guarantees the
     # initializer ends up in the final binary.
     #
-    # The generator expression filters out static-library consumers in
-    # the propagation chain: a static lib that compiles the registrar
-    # produces an archive member with no externally-visible symbols
-    # (only the anonymous-namespace registrar instance), which trips a
-    # `ranlib: has no symbols` warning. Skipping static-lib consumers
-    # avoids the empty archive members; executables, shared libs,
-    # modules, and object libs all still compile the TU, so the static
-    # initializer still lands in the final binary.
+    # The generator expression filters out the consumers that archive their
+    # objects instead of linking them: a static or object library that
+    # compiles the registrar produces an archive member with no
+    # externally-visible symbols (only the anonymous-namespace registrar
+    # instance), which trips a `ranlib: has no symbols` warning. Object
+    # libraries need this as much as static ones — Xcode materialises them as
+    # real archives, so they warn too, and their copy is redundant anyway:
+    # the executable or shared library at the end of the chain compiles the
+    # registrar itself, which is what puts the initializer in the binary.
+    # Leaving them in only multiplies the TU, and the copies collide the
+    # moment the registrar is given external linkage.
+    set(NON_ARCHIVING_CONSUMER
+        $<NOT:$<OR:$<STREQUAL:$<TARGET_PROPERTY:TYPE>,STATIC_LIBRARY>,$<STREQUAL:$<TARGET_PROPERTY:TYPE>,OBJECT_LIBRARY>>>)
+
     get_target_property(TARGET_TYPE ${TARGET} TYPE)
-    if(TARGET_TYPE STREQUAL "STATIC_LIBRARY")
+    if(TARGET_TYPE STREQUAL "STATIC_LIBRARY" OR TARGET_TYPE STREQUAL "OBJECT_LIBRARY")
         target_sources(${TARGET} INTERFACE
-            $<$<NOT:$<STREQUAL:$<TARGET_PROPERTY:TYPE>,STATIC_LIBRARY>>:${REGISTER_CPP}>)
+            $<${NON_ARCHIVING_CONSUMER}:${REGISTER_CPP}>)
     else()
         target_sources(${TARGET} PRIVATE ${REGISTER_CPP})
     endif()

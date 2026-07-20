@@ -117,7 +117,9 @@ std::string generateDataFile(const std::string& input,
 // registry's extern declarations line up regardless of how resources are
 // distributed across buckets. With bucketCount == file count this collapses
 // to one resource per file. An empty bucket still has to be a well-formed,
-// non-empty translation unit, hence the placeholder typedef.
+// non-empty translation unit, hence the placeholder byte — a definition
+// rather than a typedef, because a typedef leaves the object file with no
+// symbols at all and libtool warns on every one of those when it archives.
 std::string generateBucketDataC(const std::string& namespaceName,
                                 const std::vector<std::string>& inputFiles,
                                 size_t bucket,
@@ -137,8 +139,8 @@ std::string generateBucketDataC(const std::string& namespaceName,
     }
 
     if (!wroteAny)
-        out << "typedef int " << namespaceName << "_" << bucket
-            << "_empty_tu;\n";
+        out << "const unsigned char " << namespaceName << "_" << bucket
+            << "_empty_tu = 0;\n";
 
     return out.str();
 }
@@ -204,6 +206,12 @@ std::string generateInitHeader(const std::string& namespaceName)
     return out.str();
 }
 
+// The registrar keeps internal linkage deliberately. res_embed_add propagates
+// this TU to every consumer that needs the resources, so several copies can
+// meet in one link; internal linkage is what keeps that from being a duplicate
+// symbol. Giving it external linkage to quiet libtool's "has no symbols"
+// breaks the link instead — the warning belongs to the static-lib consumers
+// that should never have compiled this TU at all (see ResEmbed.cmake).
 std::string generateRegisterCpp(const std::string& namespaceName)
 {
     auto out = std::ostringstream();
