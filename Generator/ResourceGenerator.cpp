@@ -80,33 +80,165 @@ bool writeFileIfChanged(const std::string& path, const std::string& content)
     return true;
 }
 
+// How the bytes are spelled in the generated sources.
+//
+// Packed (the portable default): the bytes are packed eight at a time into
+// `unsigned long long` hex literals, in the target's byte order, so the
+// array's in-memory image is exactly the resource (plus zero padding up to
+// the next multiple of 8, which _size excludes). Compared with one decimal
+// literal per byte this is ~40% less source text and 8x fewer initializer
+// elements, which is what dominates the compiler's time on big arrays.
+//
+// #embed (split C layout only, when the C compiler supports it): the bytes
+// never pass through the source at all — the compiler reads the resource
+// directly, which is orders of magnitude faster than any brace list.
+struct DataOptions
+{
+    bool bigEndian = false;
+    bool useEmbed = false;
+};
+
+std::string toHex64(unsigned long long value)
+{
+    static constexpr char digits[] = "0123456789abcdef";
+    auto out = std::string("0x0000000000000000");
+
+    for (auto i = 17; i >= 2; --i, value >>= 4)
+        out[static_cast<size_t>(i)] = digits[value & 0xf];
+
+    return out;
+}
+
+// The brace-list body of a packed `unsigned long long` array: 8 words per
+// line. Always emits at least one element so an empty resource still yields
+// a well-formed (non-empty) array.
+std::string packedInitializer(const Data& data, bool bigEndian)
+{
+    auto wordCount = std::max<size_t>(1, (data.size() + 7) / 8);
+    auto out = std::string();
+    out.reserve(wordCount * 20 + wordCount / 8 * 5 + 8);
+
+    for (size_t w = 0; w < wordCount; ++w)
+    {
+        auto word = 0ull;
+
+        for (size_t b = 0; b < 8; ++b)
+        {
+            auto index = w * 8 + b;
+            auto byte = index < data.size() ? data[index] : 0;
+            auto shift = bigEndian ? (7 - b) * 8 : b * 8;
+            word |= static_cast<unsigned long long>(byte) << shift;
+        }
+
+        out += w % 8 == 0 ? "    " : " ";
+        out += toHex64(word);
+
+        if (w + 1 < wordCount)
+            out += ",";
+
+        if (w % 8 == 7 || w + 1 == wordCount)
+            out += "\n";
+    }
+
+    return out;
+}
+
+// FNV-1a 64 of the resource bytes. With #embed the generated .c no longer
+// contains the bytes, so writeFileIfChanged would leave it untouched when
+// only the resource changes; stamping the hash into the file makes every
+// content change rewrite it, so the object rebuilds even under build tools
+// that don't pick up #embed dependencies from the compiler's depfile.
+unsigned long long fnv1a64(const Data& data)
+{
+    auto hash = 0xcbf29ce484222325ull;
+
+    for (auto byte: data)
+    {
+        hash ^= byte;
+        hash *= 0x100000001b3ull;
+    }
+
+    return hash;
+}
+
+// Absolute, forward-slashed path for an #embed directive (forward slashes
+// work everywhere, including clang-cl on Windows). Returns empty when the
+// path can't be spelled inside a "..." directive.
+std::string embedPath(const std::string& input)
+{
+    auto path = fs::absolute(input).lexically_normal().generic_string();
+
+    if (path.find_first_of("\"\n\r") != std::string::npos)
+        return {};
+
+    return path;
+}
+
+// Wraps a bucket whose resources use #embed. The pragmas silence the
+// "#embed is a C23 extension" diagnostic when the consumer compiles below
+// C23 (clang: -Wc23-extensions, GCC: -Wpedantic). They are push/pop scoped
+// so they don't leak into neighbours in a unity-build TU, and they live in
+// the source rather than in per-file COMPILE_OPTIONS, which would exclude
+// the file from unity builds.
+constexpr const char* embedPrologue =
+    "#if defined(__clang__)\n"
+    "#pragma clang diagnostic push\n"
+    "#pragma clang diagnostic ignored \"-Wc23-extensions\"\n"
+    "#elif defined(__GNUC__)\n"
+    "#pragma GCC diagnostic push\n"
+    "#pragma GCC diagnostic ignored \"-Wpedantic\"\n"
+    "#endif\n\n";
+
+constexpr const char* embedEpilogue =
+    "\n#if defined(__clang__)\n"
+    "#pragma clang diagnostic pop\n"
+    "#elif defined(__GNUC__)\n"
+    "#pragma GCC diagnostic pop\n"
+    "#endif\n";
+
+// One resource's C definitions. `_data` is a pointer rather than the array
+// itself so the storage type (packed words vs. #embed bytes) can change
+// without touching the C++ registry's extern declarations. `_storage` is
+// static and carries the resource index, so it stays unique when several
+// buckets are merged into one unity-build TU. Sets usedEmbed when the
+// #embed form was emitted (empty resources and unrepresentable paths fall
+// back to the packed form).
 std::string generateDataFile(const std::string& input,
-                             const std::string& varPrefix)
+                             const std::string& varPrefix,
+                             const DataOptions& options,
+                             bool& usedEmbed)
 {
     auto data = readDataFrom(input);
     auto out = std::ostringstream();
 
-    out << "const unsigned char " << varPrefix << "_data[] = {\n";
+    auto path = options.useEmbed && !data.empty() ? embedPath(input)
+                                                  : std::string();
+    usedEmbed = !path.empty();
 
-    for (size_t i = 0; i < data.size(); ++i)
+    if (usedEmbed)
     {
-        if (i % 16 == 0)
-            out << "    ";
-
-        out << static_cast<unsigned int>(data[i]);
-
-        if (i + 1 < data.size())
-            out << ",";
-
-        if (i % 16 == 15 || i + 1 == data.size())
-            out << "\n";
-        else
-            out << " ";
+        out << "/* " << getFilename(input) << ": " << data.size()
+            << " bytes, FNV-1a 64 " << toHex64(fnv1a64(data)) << " */\n";
+        out << "__attribute__((aligned(8))) static const unsigned char "
+            << varPrefix << "_storage[] = {\n";
+        out << "#embed \"" << path << "\"\n";
+        out << "};\n";
+        out << "const unsigned char* const " << varPrefix
+            << "_data = " << varPrefix << "_storage;\n";
+    }
+    else
+    {
+        out << "static const unsigned long long " << varPrefix
+            << "_storage[] = {\n";
+        out << packedInitializer(data, options.bigEndian);
+        out << "};\n";
+        out << "const unsigned char* const " << varPrefix
+            << "_data = (const unsigned char*) " << varPrefix
+            << "_storage;\n";
     }
 
-    out << "};\n\n";
-    out << "const unsigned long " << varPrefix
-        << "_size = sizeof(" << varPrefix << "_data);\n";
+    out << "const unsigned long " << varPrefix << "_size = " << data.size()
+        << ";\n";
 
     return out.str();
 }
@@ -123,10 +255,12 @@ std::string generateDataFile(const std::string& input,
 std::string generateBucketDataC(const std::string& namespaceName,
                                 const std::vector<std::string>& inputFiles,
                                 size_t bucket,
-                                size_t bucketCount)
+                                size_t bucketCount,
+                                const DataOptions& options)
 {
     auto out = std::ostringstream();
     auto wroteAny = false;
+    auto anyEmbed = false;
 
     for (size_t i = bucket; i < inputFiles.size(); i += bucketCount)
     {
@@ -134,13 +268,18 @@ std::string generateBucketDataC(const std::string& namespaceName,
             out << "\n";
 
         auto varPrefix = namespaceName + "_" + std::to_string(i);
-        out << generateDataFile(inputFiles[i], varPrefix);
+        auto usedEmbed = false;
+        out << generateDataFile(inputFiles[i], varPrefix, options, usedEmbed);
+        anyEmbed = anyEmbed || usedEmbed;
         wroteAny = true;
     }
 
     if (!wroteAny)
         out << "const unsigned char " << namespaceName << "_" << bucket
             << "_empty_tu = 0;\n";
+
+    if (anyEmbed)
+        return embedPrologue + out.str() + embedEpilogue;
 
     return out.str();
 }
@@ -158,7 +297,7 @@ std::string generateEntriesCpp(const std::string& namespaceName,
     for (size_t i = 0; i < inputFiles.size(); ++i)
     {
         auto varPrefix = namespaceName + "_" + std::to_string(i);
-        out << "extern const unsigned char " << varPrefix << "_data[];\n";
+        out << "extern const unsigned char* const " << varPrefix << "_data;\n";
         out << "extern const unsigned long " << varPrefix << "_size;\n";
     }
     out << "}\n";
@@ -228,16 +367,18 @@ std::string generateRegisterCpp(const std::string& namespaceName)
 }
 
 // Combined data file: every input's bytes inlined as anonymous-namespace
-// arrays, followed by the Entries-returning function — a single TU for the
-// whole res_embed_add call. Used as the fallback when the C-bucket layout
-// (see --split-count) isn't available: namely C++-only consumers, where a
-// single C++ TU is all we can compile.
+// packed-word arrays (see DataOptions), followed by the Entries-returning
+// function — a single TU for the whole res_embed_add call. Used as the
+// fallback when the C-bucket layout (see --split-count) isn't available:
+// namely C++-only consumers, where a single C++ TU is all we can compile.
 std::string generateCombinedDataCpp(const std::string& namespaceName,
                                     const std::string& category,
                                     const std::string& baseDir,
-                                    const std::vector<std::string>& inputFiles)
+                                    const std::vector<std::string>& inputFiles,
+                                    const DataOptions& options)
 {
     auto out = std::ostringstream();
+    auto sizes = std::vector<size_t>();
 
     out << "#include \"" << namespaceName << ".h\"\n\n";
     out << "namespace\n{\n";
@@ -245,24 +386,10 @@ std::string generateCombinedDataCpp(const std::string& namespaceName,
     for (size_t i = 0; i < inputFiles.size(); ++i)
     {
         auto data = readDataFrom(inputFiles[i]);
-        out << "const unsigned char data_" << i << "[] = {\n";
+        sizes.push_back(data.size());
 
-        for (size_t j = 0; j < data.size(); ++j)
-        {
-            if (j % 16 == 0)
-                out << "    ";
-
-            out << static_cast<unsigned int>(data[j]);
-
-            if (j + 1 < data.size())
-                out << ",";
-
-            if (j % 16 == 15 || j + 1 == data.size())
-                out << "\n";
-            else
-                out << " ";
-        }
-
+        out << "const unsigned long long storage_" << i << "[] = {\n";
+        out << packedInitializer(data, options.bigEndian);
         out << "};\n\n";
     }
 
@@ -274,8 +401,9 @@ std::string generateCombinedDataCpp(const std::string& namespaceName,
     for (size_t i = 0; i < inputFiles.size(); ++i)
     {
         auto resourceName = resourceKey(inputFiles[i], baseDir);
-        out << "        {data_" << i << ", sizeof(data_" << i << "), \""
-            << resourceName << "\", \"" << category << "\"}";
+        out << "        {reinterpret_cast<const unsigned char*>(storage_" << i
+            << "), " << sizes[i] << ", \"" << resourceName << "\", \""
+            << category << "\"}";
 
         if (i + 1 < inputFiles.size())
             out << ",";
@@ -373,7 +501,9 @@ void runGenerateData(const std::string& outputPath,
                      const std::string& varPrefix,
                      const std::string& inputFile)
 {
-    auto content = generateDataFile(inputFile, varPrefix);
+    auto usedEmbed = false;
+    auto content =
+        generateDataFile(inputFile, varPrefix, DataOptions(), usedEmbed);
     writeFileIfChanged(outputPath, content);
 }
 
@@ -407,6 +537,7 @@ struct GenerateArgs
     std::string outputRegister;
     std::string depfile;
     int splitCount = 0;
+    DataOptions dataOptions;
 };
 
 std::vector<std::string> readManifest(const std::string& path)
@@ -480,6 +611,10 @@ GenerateArgs parseGenerateArgs(int argc, char* argv[])
             args.depfile = requireValue(i, "--depfile");
         else if (flag == "--split-count")
             args.splitCount = std::stoi(requireValue(i, "--split-count"));
+        else if (flag == "--big-endian")
+            args.dataOptions.bigEndian = true;
+        else if (flag == "--use-embed")
+            args.dataOptions.useEmbed = true;
         else
             throw std::runtime_error("Unknown flag: " + flag);
     }
@@ -515,12 +650,13 @@ void runGenerate(int argc, char* argv[])
 
     if (args.splitCount > 0)
     {
-        // Split mode: the data bytes go into plain-C .c files (compiled by
-        // the C front-end, which digests large brace-initializer arrays far
-        // faster than C++), and --output-cpp holds only the small Entries
-        // registry that references each array via extern "C". This restores
-        // the historical "resources are C, not C++" property and lets the
-        // build recompile only the bucket that actually changed.
+        // Split mode: the data goes into plain-C .c files, and --output-cpp
+        // holds only the small Entries registry that references each
+        // resource via extern "C". C is what makes #embed available (with
+        // --use-embed the compiler reads the resource files directly); in
+        // the packed fallback the C front end still digests big
+        // brace-initializer arrays faster than C++. Either way the build
+        // recompiles only the bucket that actually changed.
         //
         // Resources are round-robined across exactly splitCount .c files,
         // named <namespace>_<b>.c next to outputCpp. res_embed_add declares
@@ -546,7 +682,8 @@ void runGenerate(int argc, char* argv[])
 
             writeFileIfChanged(
                 cPath,
-                generateBucketDataC(args.namespaceName, files, b, buckets));
+                generateBucketDataC(args.namespaceName, files, b, buckets,
+                                    args.dataOptions));
         }
     }
     else
@@ -555,7 +692,8 @@ void runGenerate(int argc, char* argv[])
                            generateCombinedDataCpp(args.namespaceName,
                                                    args.category,
                                                    args.baseDir,
-                                                   files));
+                                                   files,
+                                                   args.dataOptions));
     }
 
     writeFileIfChanged(args.outputRegister,
@@ -592,7 +730,7 @@ std::string parseCommand(int argc, char* argv[])
             "  generate --namespace <ns> --output-cpp <p> --output-h <p>\n"
             "           --output-register <p> [--depfile <p>]\n"
             "           [--split-count <n>] [--category <c>]\n"
-            "           [--base-directory <d>]\n"
+            "           [--base-directory <d>] [--big-endian] [--use-embed]\n"
             "           (--scan-dir <d> | --manifest <f>)");
     }
 

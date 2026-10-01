@@ -29,10 +29,18 @@
 #                               (see below). Default: one per resource in
 #                               FILES mode, 8 in the build-time modes.
 #
+# Data encoding:
+#   When the C compiler supports C23 `#embed` (Clang 19+ / Apple clang 17+,
+#   GCC 15+; not MSVC) each `.c` file `#embed`s the resource directly, so the
+#   bytes never pass through the source text. Otherwise the bytes are packed
+#   eight at a time into `unsigned long long` hex literals in the target's
+#   byte order. Set RESEMBED_USE_EMBED=OFF to force the packed encoding.
+#
 # Translation-unit layout:
-#   The embedded bytes are emitted as plain-C `.c` files (compiled by the C
-#   front end, which digests large byte arrays far faster than C++) plus a
-#   small `.cpp` registry. Resources are round-robined across N data TUs:
+#   The embedded data is emitted as plain-C `.c` files (C is what makes
+#   `#embed` usable, and the C front end digests large arrays faster than
+#   C++) plus a small `.cpp` registry. Resources are round-robined across N
+#   data TUs:
 #
 #     - FILES mode knows the resource count at configure time, so N defaults
 #       to one `.c` per resource — the finest grain, so editing one resource
@@ -50,7 +58,50 @@
 #   other source.
 #
 #   If the consuming project hasn't enabled the C language, all modes fall
-#   back to a single combined `.cpp` compiled as C++.
+#   back to a single combined `.cpp` compiled as C++ (always packed).
+option(RESEMBED_USE_EMBED
+        "Use C23 #embed for embedded data when the C compiler supports it" ON)
+
+# Configure-time probe: does the C compiler accept exactly the construct the
+# generator emits (an 8-aligned array initialised by #embed)? Runs once; the
+# result is cached in RESEMBED_C_HAS_EMBED.
+function(_res_embed_check_c_embed)
+    if(DEFINED RESEMBED_C_HAS_EMBED)
+        return()
+    endif()
+
+    set(_probe_dir "${CMAKE_BINARY_DIR}/CMakeFiles/ResEmbedEmbedProbe")
+    file(MAKE_DIRECTORY "${_probe_dir}")
+    file(WRITE "${_probe_dir}/probe.bin" "probe")
+
+    include(CheckCSourceCompiles)
+    # Compile-only: linking an executable is pointless here and fails on
+    # targets that need code signing (iOS).
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+    set(CMAKE_REQUIRED_QUIET TRUE)
+    check_c_source_compiles("
+#if !defined(__has_embed)
+#error no __has_embed
+#endif
+#if defined(__clang__)
+#pragma clang diagnostic ignored \"-Wc23-extensions\"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic ignored \"-Wpedantic\"
+#endif
+__attribute__((aligned(8))) static const unsigned char probe_storage[] = {
+#embed \"${_probe_dir}/probe.bin\"
+};
+const unsigned char* const probe_data = probe_storage;
+int probe_check[sizeof(probe_storage) == 5 ? 1 : -1];
+" RESEMBED_C_HAS_EMBED)
+
+    if(RESEMBED_C_HAS_EMBED)
+        message(STATUS "ResEmbed: C compiler supports #embed, using it")
+    else()
+        message(STATUS "ResEmbed: C compiler lacks #embed, using packed arrays")
+    endif()
+endfunction()
+
 function(res_embed_add TARGET)
     cmake_parse_arguments(PARSE_ARGV 1 ARG ""
             "CATEGORY;NAMESPACE;SCAN_DIR;MANIFEST;DIRECTORY;BASE_DIRECTORY;TU_COUNT"
@@ -119,6 +170,24 @@ function(res_embed_add TARGET)
 
     if(ARG_BASE_DIRECTORY)
         list(APPEND GEN_ARGS --base-directory "${ARG_BASE_DIRECTORY}")
+    endif()
+
+    # Data encoding (see the header comment). The packed words are written in
+    # the target's byte order; #embed is only used for the C split layout.
+    if(_use_split)
+        set(_byte_order "${CMAKE_C_BYTE_ORDER}")
+    else()
+        set(_byte_order "${CMAKE_CXX_BYTE_ORDER}")
+    endif()
+    if(_byte_order STREQUAL "BIG_ENDIAN")
+        list(APPEND GEN_ARGS --big-endian)
+    endif()
+
+    if(_use_split AND RESEMBED_USE_EMBED)
+        _res_embed_check_c_embed()
+        if(RESEMBED_C_HAS_EMBED)
+            list(APPEND GEN_ARGS --use-embed)
+        endif()
     endif()
 
     set(EXTRA_DEPS "")

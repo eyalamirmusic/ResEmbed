@@ -168,7 +168,7 @@ Whenever the upstream rule touches `MY_STAMP`, the generator re-scans the direct
 A single `res_embed_add(<target> NAMESPACE <NS> ...)` call emits these files under the target's binary directory in `<target>-<NS>-Generated/`:
 
 - `<NS>.cpp` — in the split layout, just `getResourceEntries()` referencing the data arrays via `extern`; in the combined (C++-only) fallback, the byte arrays as well.
-- `<NS>_<i>.c` — split layout: the data translation units, each an `extern "C"` byte array per resource (see [Translation-unit layout](#translation-unit-layout-and-unity-builds)).
+- `<NS>_<i>.c` — split layout: the data translation units, each defining `<NS>_<i>_data` (a `const unsigned char*`) and `<NS>_<i>_size` per resource (see [Translation-unit layout](#translation-unit-layout-and-unity-builds) and [Data encoding](#data-encoding-and-embed)).
 - `<NS>.h` — declares `getResourceEntries()` for programmatic access.
 - `<NS>_Register.cpp` — anonymous-namespace static initializer that registers the entries into the runtime map.
 
@@ -183,9 +183,9 @@ The list of files itself (which files exist, not what's in them) is tracked thro
 
 ### Translation-unit layout (and unity builds)
 
-The embedded bytes are emitted as **plain-C `.c` files** (`<NS>_0.c`, `<NS>_1.c`, …), each defining `extern "C"` byte arrays, plus a small `<NS>.cpp` registry that stitches them together via `extern` declarations. This holds in *every* discovery mode, and it's deliberate:
+The embedded data is emitted as **plain-C `.c` files** (`<NS>_0.c`, `<NS>_1.c`, …), each defining an `extern "C"` data pointer and size per resource, plus a small `<NS>.cpp` registry that stitches them together via `extern` declarations. This holds in *every* discovery mode, and it's deliberate:
 
-- **The bytes are C, not C++.** Large brace-initializer arrays are compiled by the C front end, which digests them far faster than C++. (This is the same property the README criticizes JUCE's `BinaryData` for, below.)
+- **The bytes are C, not C++.** When the C compiler supports C23 `#embed`, each `.c` file `#embed`s the resource directly, so the bytes never pass through the source text and even very large resources compile in a fraction of the time. Otherwise the bytes are packed eight at a time into `unsigned long long` hex literals (in the target's byte order), which is far less source text and far fewer initializer elements than one literal per byte. Either way the C front end handles it, which is faster than C++. (This is the same property the README criticizes JUCE's `BinaryData` for, below.)
 - **It's parallel and granular.** The `.c` files compile concurrently, and editing one resource only re-touches the `.c` it lives in.
 
 Resources are round-robined across **N** data TUs, and how `N` is chosen is the only difference between modes:
@@ -216,6 +216,19 @@ set_target_properties(MyApp PROPERTIES UNITY_BUILD ON UNITY_BUILD_BATCH_SIZE 0)
 ```
 
 Use `UNITY_BUILD_BATCH_SIZE <n>` to batch in groups of `n`, or set `CMAKE_UNITY_BUILD=ON` project-wide. You get the single-TU compile profile back when you want it, while the default stays granular and parallel.
+
+### Data encoding and `#embed`
+
+How the bytes are spelled is an implementation detail; the CMake and C++ APIs are the same either way.
+
+- **`#embed`** (split layout only). At configure time `res_embed_add` checks once whether the C compiler accepts C23 `#embed` (result cached as `RESEMBED_C_HAS_EMBED`). In practice that means Clang 19+ / Apple clang 17+ (including clang-cl and Emscripten) and GCC 15+; MSVC does not qualify. Each resource then becomes an 8-byte-aligned array that `#embed`s the resource by absolute path. The generated file carries a pragma that silences the "`#embed` is a C23 extension" warning below C23, and a comment with the resource's size and FNV-1a hash, so the `.c` changes whenever the content does and rebuilds under every generator, not only those that read the compiler's depfiles.
+- **Packed words** (no `#embed`, `RESEMBED_USE_EMBED=OFF`, the C++-only fallback, or empty resources). The bytes are packed eight at a time into `unsigned long long` hex literals in the target's byte order (`CMAKE_C_BYTE_ORDER` / `CMAKE_CXX_BYTE_ORDER`), zero-padded at the tail; `_size` holds the exact byte count.
+
+| Option               | Default | Description                                                                                      |
+|----------------------|---------|--------------------------------------------------------------------------------------------------|
+| `RESEMBED_USE_EMBED` | `ON`    | Use `#embed` when the C compiler supports it. Set to `OFF` to always emit packed arrays.          |
+
+The generated C needs C99 (`unsigned long long`); the `#embed` form uses `__attribute__((aligned(8)))` rather than `_Alignas`, so it also works when the consumer's C standard is below C11.
 
 ### Driving a code-generator → embedder chain
 
@@ -275,9 +288,9 @@ There are many existing similar solutions to this problem.
 I will explore a couple that I know, and why I chose my implementation instead:
 
 ### #embed
-C++26 brought in #embed that lets you embed resource quickly.
-It's awesome, and you should be using it, but other than the demand for a very modern compiler
-it's also a strict compile time API. 
+C23 and C++26 brought in #embed that lets you embed resources quickly.
+It's awesome, and ResEmbed uses it internally when the compiler supports it (see [Data encoding](#data-encoding-and-embed)),
+but on its own, other than the demand for a very modern compiler, it's a strict compile time API.
 
 One of my design goals was that you can create shared libraries that 'require' resources.
 For example, you can now have a shared library that calls

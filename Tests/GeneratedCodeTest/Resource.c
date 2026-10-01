@@ -1,5 +1,6 @@
-const unsigned char resource_0_data[] = {
-    72, 101, 121, 32, 105, 116, 39, 115, 32, 97, 32, 116, 101, 120, 116
+/* "Hey it's a text", packed little-endian as the generator emits it. */
+static const unsigned long long resource_0_storage[] = {
+    0x7327746920796548, 0x0074786574206120
 };
-
-const unsigned long resource_0_size = sizeof(resource_0_data);
+const unsigned char* const resource_0_data = (const unsigned char*) resource_0_storage;
+const unsigned long resource_0_size = 15;
