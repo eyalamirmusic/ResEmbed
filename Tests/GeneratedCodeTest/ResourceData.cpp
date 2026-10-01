@@ -2,7 +2,7 @@
 
 extern "C"
 {
-extern const unsigned char resource_0_data[];
+extern const unsigned char* const resource_0_data;
 extern const unsigned long resource_0_size;
 }
 
