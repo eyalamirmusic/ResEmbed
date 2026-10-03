@@ -24,6 +24,11 @@ if(PROJECT_NAME)
     if(NOT _resembed_is_multi_config)
         list(APPEND _resembed_generator_args -DCMAKE_BUILD_TYPE=Release)
     endif()
+    # The outer build's make program, so a host configure started by an IDE
+    # with no shell PATH (Android Studio from the Dock) still finds Ninja.
+    if(CMAKE_MAKE_PROGRAM)
+        list(APPEND _resembed_generator_args "-DCMAKE_MAKE_PROGRAM=${CMAKE_MAKE_PROGRAM}")
+    endif()
 
     execute_process(
         COMMAND ${_resembed_env_cmd}
