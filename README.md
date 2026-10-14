@@ -22,6 +22,8 @@ add_executable(App Main.cpp)
 res_embed_add(App DIRECTORY Resources)
 ```
 
+The embedding step runs a small tool, `ResourceGenerator`, which is built from source as part of your build. In a native build it is an ordinary target of your project, compiled with your compiler and launcher alongside everything else. When cross-compiling (iOS, Android, Emscripten) it has to run on the build machine, so ResEmbed instead configures and builds it with the host compiler at configure time, into `_host` under its binary directory.
+
 ## Basic Usage
 
 ### Embedding a single file

@@ -1,16 +1,22 @@
 cmake_minimum_required(VERSION 3.21)
 
-if(PROJECT_NAME)
+if(PROJECT_NAME AND NOT CMAKE_CROSSCOMPILING)
+    add_executable(ResourceGenerator ResourceGenerator.cpp)
+    set_target_properties(ResourceGenerator PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        UNITY_BUILD OFF)
+    if(APPLE)
+        # A host tool: the consumer's deployment target does not apply to it.
+        target_compile_definitions(ResourceGenerator PRIVATE _LIBCPP_DISABLE_AVAILABILITY)
+    endif()
+elseif(PROJECT_NAME)
     set(host_dir "${CMAKE_CURRENT_BINARY_DIR}/_host")
     file(MAKE_DIRECTORY "${host_dir}")
 
     message(STATUS "Building ResEmbed Generator")
 
-    if(CMAKE_CROSSCOMPILING)
-        set(_resembed_env_cmd ${CMAKE_COMMAND} -E env --unset=CC --unset=CXX)
-    else()
-        set(_resembed_env_cmd)
-    endif()
+    set(_resembed_env_cmd ${CMAKE_COMMAND} -E env --unset=CC --unset=CXX)
 
     get_property(_resembed_is_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 
