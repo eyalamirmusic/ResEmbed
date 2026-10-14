@@ -6,6 +6,10 @@ if(PROJECT_NAME AND NOT CMAKE_CROSSCOMPILING)
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
         UNITY_BUILD OFF)
+    if(APPLE)
+        # A host tool: the consumer's deployment target does not apply to it.
+        target_compile_definitions(ResourceGenerator PRIVATE _LIBCPP_DISABLE_AVAILABILITY)
+    endif()
 elseif(PROJECT_NAME)
     set(host_dir "${CMAKE_CURRENT_BINARY_DIR}/_host")
     file(MAKE_DIRECTORY "${host_dir}")
