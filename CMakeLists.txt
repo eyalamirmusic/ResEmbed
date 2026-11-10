@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.29)
+
+# No C++20 modules are used anywhere: skip the per-source dependency scan
+# (the .ddi step CMake runs for C++20 targets under Ninja/VS).
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 project(ResEmbed)
 
 set(CMAKE_CXX_STANDARD 20)
